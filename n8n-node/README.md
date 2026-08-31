@@ -4,6 +4,13 @@ An n8n community node for the [Jarvis Gateway](../README.md). Replaces the
 HTTP Request + Wait pair with real nodes, and moves the push secret out of node
 parameters into a proper n8n credential.
 
+## Nodes
+
+| Node | Purpose |
+| --- | --- |
+| **Jarvis Trigger** | Starts a workflow when a message arrives from the app. Replaces the Webhook + Normalize Chat Input pair, and accepts Telegram Trigger payloads too. |
+| **Jarvis** | Sends progress, notifications and approval requests back to the app. |
+
 ## Operations
 
 | Operation | What it does | Blocks? |
@@ -100,6 +107,11 @@ then reuses it; the secret never appears in a workflow again.
 - `N8N_RESUME_URL_PREFIX` must allow the resume URL. It defaults to the origin
   of `N8N_WEBHOOK_URL`, which is correct when both are the same n8n instance.
 
+## Extending it
+
+Adding operations, more trigger nodes, or another credential:
+**[EXTENDING.md](EXTENDING.md)**.
+
 ## Development
 
 ```bash
@@ -110,11 +122,11 @@ npm test          # builds, then runs structural checks on the built package
 
 ## Status
 
-Typechecked against `n8n-workflow` 2.16.0, built, and structurally validated —
-the compiled node loads, its description satisfies n8n's contract, the resume
-webhook is declared correctly, and the manifest paths resolve.
+The **Jarvis** action node is installed and loading in n8n — it appears in the
+node picker with all three actions.
 
-It has **not** been exercised inside a running n8n. The first install is the
-real test; the fallback if anything misbehaves is the HTTP Request + Wait node
-pair documented in [docs/interactive.md](../docs/interactive.md), which is
-proven end to end.
+The **Jarvis Trigger** and the approval parking/resume path are typechecked,
+built and structurally validated, but have not yet been exercised in a live
+workflow. If either misbehaves, the fallback is the Webhook + Code + Wait +
+HTTP Request arrangement in [docs/interactive.md](../docs/interactive.md) and
+[docs/n8n-setup.md](../docs/n8n-setup.md), which is proven end to end.

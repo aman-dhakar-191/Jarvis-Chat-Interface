@@ -101,5 +101,73 @@ check('the credential test hits /health', () => {
   assert.equal(cred.test.request.url, '/health');
 });
 
+// ---- trigger node -------------------------------------------------------
+const { JarvisTrigger } = require('./dist/nodes/Jarvis/JarvisTrigger.node.js');
+const { normalizeChatInput } = require('./dist/nodes/Jarvis/normalize.js');
+
+const t = new JarvisTrigger().description;
+
+check('the trigger declares itself as a trigger with no inputs', () => {
+  assert.deepEqual(t.group, ['trigger']);
+  assert.deepEqual(t.inputs, []);
+  assert.deepEqual(t.outputs, ['main']);
+  assert.equal(t.name, 'jarvisTrigger');
+});
+
+check('the trigger webhook is a normal webhook, not a resume webhook', () => {
+  assert.equal(t.webhooks.length, 1);
+  const [hook] = t.webhooks;
+  assert.equal(hook.httpMethod, 'POST');
+  assert.equal(hook.restartWebhook, undefined, 'a trigger must not set restartWebhook');
+  assert.equal(hook.path, '={{$parameter["path"]}}');
+});
+
+check('the trigger defaults to the path the gateway expects', () => {
+  assert.equal(t.properties.find((p) => p.name === 'path').default, 'jarvis-chat');
+});
+
+check('the shared secret is masked in the UI', () => {
+  assert.equal(t.properties.find((p) => p.name === 'sharedSecret').typeOptions.password, true);
+});
+
+check('normalize handles the gateway payload', () => {
+  const n = normalizeChatInput({
+    source: 'custom_chat', userId: 'aman', sessionId: 'session_aman',
+    chatId: 'session_aman', messageId: 'msg_001', message: 'Hello Jarvis',
+  });
+  assert.equal(n.source, 'custom_chat');
+  assert.equal(n.sessionId, 'session_aman');
+  assert.equal(n.chatId, 'session_aman');
+  assert.equal(n.messageId, 'msg_001');
+  assert.equal(n.content, 'Hello Jarvis');
+  assert.equal(n.chatInput, 'Hello Jarvis');
+});
+
+check('normalize handles a Telegram Trigger item', () => {
+  const n = normalizeChatInput({
+    message: { message_id: 4242, from: { id: 111222 }, chat: { id: 111222 }, text: 'Hi from Telegram' },
+  });
+  assert.equal(n.source, 'telegram');
+  assert.equal(n.chatId, '111222');
+  assert.equal(n.sessionId, '111222', 'sessionId falls back to chatId');
+  assert.equal(n.messageId, '4242');
+  assert.equal(n.content, 'Hi from Telegram');
+});
+
+check('normalize does not mistake a string message for a Telegram object', () => {
+  const n = normalizeChatInput({ sessionId: 's1', message: 'plain string' });
+  assert.equal(n.source, 'custom_chat');
+  assert.equal(n.content, 'plain string');
+});
+
+check('normalize reports empty text so the trigger can reject it', () => {
+  assert.equal(normalizeChatInput({ sessionId: 's1' }).content, '');
+});
+
+check('normalize never regenerates a supplied sessionId', () => {
+  const n = normalizeChatInput({ sessionId: 'session_aman', chatId: 'other', message: 'x' });
+  assert.equal(n.sessionId, 'session_aman');
+});
+
 console.log(failures ? `\n${failures} FAILURES` : '\nALL STRUCTURAL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

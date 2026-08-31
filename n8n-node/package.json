@@ -26,7 +26,8 @@
       "dist/credentials/JarvisGatewayApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/Jarvis/Jarvis.node.js"
+      "dist/nodes/Jarvis/Jarvis.node.js",
+      "dist/nodes/Jarvis/JarvisTrigger.node.js"
     ]
   },
   "devDependencies": {
