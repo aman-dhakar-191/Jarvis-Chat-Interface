@@ -219,9 +219,29 @@ export class Jarvis implements INodeType {
 		}
 		const pushUrl = `${baseUrl}/api/push`;
 
+		// An empty sessionId reaches the gateway as a bare 400, which says nothing
+		// about the cause. The usual reason is reading $json.sessionId at a point
+		// where $json is something else - a data-table row exposes session_id, not
+		// sessionId - so name that rather than let the HTTP error surface.
+		const requireSession = (value: unknown, itemIndex: number): string => {
+			const sessionId = typeof value === 'string' ? value.trim() : '';
+			if (!sessionId) {
+				throw new NodeOperationError(
+					this.getNode(),
+					'Session ID is empty, so the gateway cannot tell which conversation to deliver to',
+					{
+						itemIndex,
+						description:
+							"The expression resolved to nothing. Inside a sub-workflow read it from the trigger, e.g. {{ $('When Executed by Main Agent').first().json.sessionId }}. Note a data-table row exposes `session_id`, not `sessionId`.",
+					},
+				);
+			}
+			return sessionId;
+		};
+
 		// ---- approval: push the prompt, then park the execution --------------
 		if (operation === 'askApproval') {
-			const sessionId = this.getNodeParameter('sessionId', 0) as string;
+			const sessionId = requireSession(this.getNodeParameter('sessionId', 0), 0);
 			const content = this.getNodeParameter('content', 0) as string;
 			const rows = this.getNodeParameter('choices.choice', 0, []) as ChoiceRow[];
 
@@ -267,7 +287,7 @@ export class Jarvis implements INodeType {
 		// ---- fire-and-forget pushes, one per item ----------------------------
 		const results: INodeExecutionData[] = [];
 		for (let i = 0; i < items.length; i++) {
-			const sessionId = this.getNodeParameter('sessionId', i) as string;
+			const sessionId = requireSession(this.getNodeParameter('sessionId', i), i);
 			const content = this.getNodeParameter('content', i) as string;
 			const event =
 				operation === 'notify'
