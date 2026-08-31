@@ -31,6 +31,7 @@ connection is full-duplex, not request/response.
 | `session.leave` | — | Detaches this connection from the session. |
 | `user.message` | `{ messageId?, content }` | `content` is required, ≤ 8000 chars. A `messageId` is generated if omitted. |
 | `connection.ping` | anything | Answered with `connection.pong`. |
+| `approval.respond` | `{ approvalId, choice, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. |
 
 A client **cannot** set its own `userId`. Identity comes from the token
 presented at the handshake; anything you put in `data.userId` is ignored.
@@ -46,6 +47,10 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 | `execution.completed` | `{ messageId, durationMs? }` |
 | `execution.failed` | `{ messageId, code, message }` |
 | `notification` | `{ content, … }` — unprompted, no request needed |
+| `tool.started` / `tool.progress` / `tool.finished` / `execution.progress` | `{ content }` — transient status while Jarvis works |
+| `approval.request` | `{ approvalId, content, choices: [{ value, label }] }` |
+| `approval.resolved` | `{ approvalId, choice, by }` — also when another device answered |
+| `approval.expired` | `{ approvalId }` |
 | `error` | `{ code, message, messageId? }` |
 | `connection.pong` | `{ echo }` |
 
@@ -58,7 +63,8 @@ Acknowledgements are their own frame shape:
 ### Error codes
 
 `AUTH_FAILED`, `INVALID_MESSAGE`, `INVALID_SESSION`, `RATE_LIMITED`,
-`N8N_UNAVAILABLE`, `EXECUTION_FAILED`, `EXECUTION_TIMEOUT`, `INTERNAL_ERROR`.
+`N8N_UNAVAILABLE`, `EXECUTION_FAILED`, `EXECUTION_TIMEOUT`, `APPROVAL_NOT_FOUND`,
+`APPROVAL_FAILED`, `INTERNAL_ERROR`.
 
 ## Identifiers
 
@@ -125,6 +131,14 @@ Routing target, first match wins: `connectionId` → `sessionId`/`chatId` →
 `userId`. If `messageId` matches an execution the gateway is waiting on, it
 inherits that execution's routing and closes it out, so `messageId` alone is
 enough. Any event name works — use `notification` for unprompted messages.
+
+### Approvals over `POST /api/push`
+
+Sending `event: "approval.request"` additionally requires `resumeUrl` (from
+n8n's `{{ $execution.resumeUrl }}`). The gateway stores it, strips it, and sends
+the client only an `approvalId` — a resume capability never reaches a browser.
+The URL must start with `N8N_RESUME_URL_PREFIX` or the push is rejected with 400.
+See [interactive.md](interactive.md).
 
 Responds `{ "ok": true, "delivered": <n> }`. `delivered: 0` means nothing was
 connected; the push is not queued.

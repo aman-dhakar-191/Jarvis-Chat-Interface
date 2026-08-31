@@ -45,7 +45,11 @@ function buildConfig(env = process.env) {
       responseMode,
       timeoutMs: int(env, 'N8N_TIMEOUT_MS', 120000),
       responsePath: env.N8N_RESPONSE_PATH || '',
+      // Approval resume URLs must start with this. Defaults to the n8n origin
+      // derived from the webhook URL; set to '*' to disable the check.
+      resumeUrlPrefix: (env.N8N_RESUME_URL_PREFIX || '').trim(),
     },
+    approvalTimeoutMs: int(env, 'APPROVAL_TIMEOUT_MS', 3600000),
     pushSecret: env.PUSH_SECRET || '',
     // The conversation key handed to n8n. Stable by design: the same value on
     // every device and across reinstalls, so Jarvis keeps one memory thread.
@@ -59,6 +63,16 @@ function buildConfig(env = process.env) {
   };
 
   config.authEnabled = config.tokens.size > 0;
+
+  if (config.n8n.resumeUrlPrefix === '*') {
+    config.n8n.resumeUrlPrefix = '';
+  } else if (!config.n8n.resumeUrlPrefix && config.n8n.webhookUrl) {
+    try {
+      config.n8n.resumeUrlPrefix = new URL(config.n8n.webhookUrl).origin;
+    } catch {
+      config.n8n.resumeUrlPrefix = '';
+    }
+  }
 
   // Warnings, not failures: an unconfigured gateway should still boot so the UI
   // can be opened and the misconfiguration seen.

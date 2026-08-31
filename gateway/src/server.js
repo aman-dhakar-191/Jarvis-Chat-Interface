@@ -10,6 +10,7 @@ const protocol = require('./protocol');
 const { authenticate, originAllowed, safeEqual } = require('./auth');
 const { Connection, ConnectionRegistry } = require('./connections');
 const { ExecutionStore } = require('./executions');
+const { ApprovalStore, resumeUrlAllowed } = require('./approvals');
 const { dispatch } = require('./handlers');
 
 const { ERROR_CODES } = protocol;
@@ -17,7 +18,8 @@ const { ERROR_CODES } = protocol;
 function createServer(config) {
   const registry = new ConnectionRegistry();
   const executions = new ExecutionStore();
-  const ctx = { config, registry, executions };
+  const approvals = new ApprovalStore();
+  const ctx = { config, registry, executions, approvals };
 
   const app = express();
   app.disable('x-powered-by');
@@ -28,6 +30,7 @@ function createServer(config) {
       ok: true,
       connections: registry.size,
       pendingExecutions: executions.byMessageId.size,
+      pendingApprovals: approvals.size,
       authEnabled: config.authEnabled,
       n8nConfigured: Boolean(config.n8n.webhookUrl),
       responseMode: config.n8n.responseMode,
@@ -71,6 +74,44 @@ function createServer(config) {
     if (content !== undefined) data.content = content;
     if (replyTo) data.replyTo = replyTo;
     data.messageId = data.messageId || protocol.messageId();
+
+    // Human-in-the-loop: n8n parks a Wait node and hands us its resume URL.
+    // Register it server-side and strip it - the client only sees an opaque id,
+    // so a resume capability never leaves the gateway.
+    if (eventName === 'approval.request') {
+      const resumeUrl = body.resumeUrl || data.resumeUrl;
+      if (!resumeUrl) {
+        return res.status(400).json({ ok: false, error: 'approval.request requires resumeUrl' });
+      }
+      if (!resumeUrlAllowed(resumeUrl, config)) {
+        logger.warn('rejected approval with out-of-scope resumeUrl', { resumeUrl });
+        return res.status(400).json({
+          ok: false,
+          error: `resumeUrl must start with ${config.n8n.resumeUrlPrefix} (set N8N_RESUME_URL_PREFIX to change)`,
+        });
+      }
+      delete data.resumeUrl;
+      data.approvalId = approvals.create({
+        approvalId: data.approvalId,
+        resumeUrl,
+        sessionId: filter.sessionId || null,
+        userId: filter.userId || null,
+        ttlMs: config.approvalTimeoutMs,
+        onExpire: (approvalId, sessionId) => {
+          registry.deliver({ sessionId }, protocol.makeEvent('approval.expired', {
+            sessionId,
+            data: { approvalId },
+          }));
+        },
+      });
+      // A list of choices makes the client render buttons; default to yes/no.
+      if (!Array.isArray(data.choices) || data.choices.length === 0) {
+        data.choices = [
+          { value: 'approve', label: 'Approve' },
+          { value: 'reject', label: 'Reject' },
+        ];
+      }
+    }
 
     const outbound = protocol.makeEvent(eventName, { sessionId: filter.sessionId || null, data });
     const delivered = registry.deliver(filter, outbound);
@@ -187,12 +228,13 @@ function createServer(config) {
   async function close() {
     clearInterval(heartbeat);
     executions.clear();
+    approvals.clear();
     registry.closeAll();
     await new Promise((resolve) => wss.close(resolve));
     await new Promise((resolve) => server.close(resolve));
   }
 
-  return { app, server, wss, registry, executions, close };
+  return { app, server, wss, registry, executions, approvals, close };
 }
 
 module.exports = { createServer };

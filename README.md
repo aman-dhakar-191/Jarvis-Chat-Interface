@@ -152,7 +152,13 @@ Jarvis keeps its memory.
   unprompted notifications.
 - Heartbeats connections and serves the web client.
 
+- Carries human-in-the-loop approvals: n8n parks a Wait node, your phone shows
+  buttons, and the gateway resumes the workflow with your answer — without ever
+  handing the resume URL to a browser.
+
 Full event reference: **[docs/protocol.md](docs/protocol.md)**.
+Config and day-to-day operations: **[docs/configuration.md](docs/configuration.md)**.
+Progress updates and approvals: **[docs/interactive.md](docs/interactive.md)**.
 
 ## Tests
 
@@ -160,10 +166,12 @@ Full event reference: **[docs/protocol.md](docs/protocol.md)**.
 cd gateway && npm test
 ```
 
-16 end-to-end tests run a real gateway against a stub n8n over real WebSockets:
+21 end-to-end tests run a real gateway against a stub n8n over real WebSockets:
 the full round trip, identity spoofing, handshake rejection, n8n being down or
 erroring, malformed frames, async callbacks, push routing and authorization,
-rate limiting, and session stability.
+rate limiting, session stability, and the approval round trip — including that
+the resume URL never reaches a client, that an approval cannot be answered
+twice, and that it survives a reconnect.
 
 ## Layout
 
@@ -178,6 +186,7 @@ gateway/
     auth.js         token checks, origin checks
     connections.js  connection registry and fan-out
     executions.js   in-flight executions for async mode
+    approvals.js    parked human-in-the-loop approvals
     config.js       environment parsing
   public/           the web client (PWA)
   test/             end-to-end tests
@@ -185,6 +194,8 @@ gateway/
   docker-compose.yml  deployment behind Traefik
 docs/
   n8n-setup.md      wiring this to your existing Jarvis
+  configuration.md  every setting, test vs production URLs, troubleshooting
+  interactive.md    progress updates and human-in-the-loop approvals
   protocol.md       event reference
   technical-design.md  the original design document
   n8n/              importable workflows + standalone Code nodes
@@ -193,7 +204,8 @@ docs/
 ## Status
 
 Working today: the full loop, stable sessions, multi-device delivery,
-reconnection, async replies, unprompted notifications, typed errors.
+reconnection, async replies, unprompted notifications, live progress updates,
+human-in-the-loop approvals, typed errors.
 
 Not built yet: token streaming (`assistant.chunk`), cancelling a running
 execution, attachments, and a native Android client — all of which the protocol

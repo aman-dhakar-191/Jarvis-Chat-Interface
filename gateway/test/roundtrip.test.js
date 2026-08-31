@@ -396,3 +396,185 @@ test('n8n can reply by chatId alone, exactly like a Telegram chat_id', async (t)
   const message = await client.waitForEvent('assistant.message');
   assert.equal(message.data.content, 'Routed by chatId.');
 });
+
+/* ---------------- human-in-the-loop approvals ---------------- */
+
+/** A stand-in for an n8n Wait node's resume URL. */
+async function startResumeEndpoint() {
+  const http = require('node:http');
+  const resumed = [];
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      resumed.push(JSON.parse(raw || '{}'));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"resumed":true}');
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    url: `http://127.0.0.1:${port}/webhook-waiting/exec_1`,
+    resumed,
+    close: () => new Promise((r) => server.close(r)),
+  };
+}
+
+function pushApproval(gateway, body) {
+  return fetch(`${gateway.httpUrl}/api/push`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-gateway-secret': 'push-secret' },
+    body: JSON.stringify({ event: 'approval.request', ...body }),
+  });
+}
+
+test('approval round trip: n8n asks, phone answers, workflow resumes', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({
+    ...AUTH,
+    N8N_WEBHOOK_URL: `${resume.origin}/webhook/jarvis-chat`,
+    DEFAULT_SESSION_ID: 'session_aman',
+  });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+  client.send({ event: 'session.join', sessionId: 'session_aman' });
+  await client.waitForEvent('session.joined');
+
+  const response = await pushApproval(gateway, {
+    sessionId: 'session_aman',
+    resumeUrl: resume.url,
+    content: 'Send this email to the client?',
+    data: { choices: [{ value: 'approve', label: 'Send it' }, { value: 'reject', label: 'Cancel' }] },
+  });
+  assert.equal(response.status, 200);
+
+  const request = await client.waitForEvent('approval.request');
+  assert.equal(request.data.content, 'Send this email to the client?');
+  assert.match(request.data.approvalId, /^apr_/);
+  assert.deepEqual(request.data.choices.map((c) => c.value), ['approve', 'reject']);
+  // The resume URL is a capability and must never reach the client.
+  assert.equal(request.data.resumeUrl, undefined);
+  assert.ok(!JSON.stringify(request).includes('webhook-waiting'));
+
+  client.send({ event: 'approval.respond', data: { approvalId: request.data.approvalId, choice: 'approve', comment: 'go ahead' } });
+
+  const resolved = await client.waitForEvent('approval.resolved');
+  assert.equal(resolved.data.choice, 'approve');
+  assert.equal(resolved.data.by, 'aman');
+
+  assert.equal(resume.resumed.length, 1);
+  assert.equal(resume.resumed[0].approved, true);
+  assert.equal(resume.resumed[0].choice, 'approve');
+  assert.equal(resume.resumed[0].comment, 'go ahead');
+  assert.equal(resume.resumed[0].sessionId, 'session_aman');
+  assert.equal(resume.resumed[0].userId, 'aman');
+});
+
+test('an approval can only be answered once', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: `${resume.origin}/webhook/x` });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+  client.send({ event: 'session.join', sessionId: 's1' });
+  await client.waitForEvent('session.joined');
+
+  await pushApproval(gateway, { sessionId: 's1', resumeUrl: resume.url, content: 'Deploy to production?' });
+  const request = await client.waitForEvent('approval.request');
+  const id = request.data.approvalId;
+
+  client.send({ event: 'approval.respond', data: { approvalId: id, choice: 'approve' } });
+  await client.waitForEvent('approval.resolved');
+
+  // A double tap must not resume the workflow a second time.
+  client.send({ event: 'approval.respond', data: { approvalId: id, choice: 'approve' } });
+  const error = await client.waitForEvent('error');
+  assert.equal(error.data.code, 'APPROVAL_NOT_FOUND');
+  assert.equal(resume.resumed.length, 1);
+});
+
+test('a resumeUrl outside the n8n origin is refused', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: 'https://n8n.internal/webhook/x' });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const response = await pushApproval(gateway, {
+    sessionId: 's1',
+    resumeUrl: 'https://attacker.example.com/steal',
+    content: 'hi',
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /must start with https:\/\/n8n.internal/);
+
+  const missing = await pushApproval(gateway, { sessionId: 's1', content: 'no url' });
+  assert.equal(missing.status, 400);
+});
+
+test('an approval survives a reconnect and reaches every device', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: `${resume.origin}/webhook/x` });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const phone = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  await phone.waitForEvent('connection.ready');
+  phone.send({ event: 'session.join', sessionId: 's1' });
+  await phone.waitForEvent('session.joined');
+
+  await pushApproval(gateway, { sessionId: 's1', resumeUrl: resume.url, content: 'Approve?' });
+  const request = await phone.waitForEvent('approval.request');
+
+  // The phone drops off entirely, then comes back as a new connection.
+  await phone.close();
+  const laptop = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => laptop.close());
+  await laptop.waitForEvent('connection.ready');
+  laptop.send({ event: 'session.join', sessionId: 's1' });
+  await laptop.waitForEvent('session.joined');
+
+  laptop.send({ event: 'approval.respond', data: { approvalId: request.data.approvalId, choice: 'reject' } });
+  const resolved = await laptop.waitForEvent('approval.resolved');
+  assert.equal(resolved.data.choice, 'reject');
+  assert.equal(resume.resumed[0].approved, false);
+});
+
+test('progress events from n8n stream through mid-execution', async (t) => {
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: 'http://127.0.0.1:1/x' });
+  t.after(() => gateway.stop());
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+  client.send({ event: 'session.join', sessionId: 's1' });
+  await client.waitForEvent('session.joined');
+
+  for (const [event, content] of [['tool.started', 'Searching your email…'], ['tool.finished', 'Found 3 messages']]) {
+    const res = await fetch(`${gateway.httpUrl}/api/push`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-gateway-secret': 'push-secret' },
+      body: JSON.stringify({ sessionId: 's1', event, content }),
+    });
+    assert.deepEqual(await res.json(), { ok: true, delivered: 1 });
+  }
+
+  assert.equal((await client.waitForEvent('tool.started')).data.content, 'Searching your email…');
+  assert.equal((await client.waitForEvent('tool.finished')).data.content, 'Found 3 messages');
+});

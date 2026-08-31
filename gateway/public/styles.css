@@ -315,3 +315,60 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* ---------- progress + approvals ---------- */
+.progress-note {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 6px 0;
+  animation: rise 0.18s ease-out;
+}
+
+.row.approval { align-self: stretch; max-width: 100%; }
+
+.approval-card {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-radius: 16px;
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  animation: rise 0.18s ease-out;
+}
+.approval-card.answered, .approval-card.expired {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.approval-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.approval-card.answered .approval-label,
+.approval-card.expired .approval-label { color: var(--muted); }
+
+.approval-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.approval-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.approval-btn {
+  flex: 1 1 auto;
+  min-width: 110px;
+  padding: 10px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+  transition: transform 0.1s, filter 0.15s;
+}
+.approval-btn:active { transform: scale(0.97); }
+.approval-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.approval-outcome { font-size: 13px; color: var(--muted); }

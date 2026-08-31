@@ -52,6 +52,7 @@ const state = {
   messages: [],
   pending: new Map(),   // messageId -> message object
   thinking: 0,
+  progress: '',
   // Empty until the gateway tells us its stable session id, unless this device
   // already has one pinned. The id must stay identical across reloads,
   // reconnects and devices so Jarvis keeps a single memory thread.
@@ -76,6 +77,9 @@ function loadTranscript() {
   // A message left "pending" from a previous run can never be resolved now.
   for (const message of state.messages) {
     if (message.state === 'pending') message.state = 'failed';
+    // Approvals are deliberately left open: the gateway keeps them for the
+    // session, so one usually survives a reload. If it did not, answering
+    // returns APPROVAL_NOT_FOUND and it is marked expired then.
   }
 }
 
@@ -110,12 +114,20 @@ function render() {
     const row = document.createElement('div');
     row.className = 'row assistant thinking-row';
     row.innerHTML = '<div class="bubble thinking"><i></i><i></i><i></i></div>';
+    if (state.progress) {
+      const note = document.createElement('div');
+      note.className = 'progress-note';
+      note.textContent = state.progress;
+      row.append(note);
+    }
     el.transcript.append(row);
   }
   if (stick) scrollToBottom();
 }
 
 function renderRow(message) {
+  if (message.role === 'approval') return renderApproval(message);
+
   const row = document.createElement('div');
   row.className = `row ${message.role}${message.state ? ` ${message.state}` : ''}`;
 
@@ -139,6 +151,73 @@ function renderRow(message) {
     row.append(meta);
   }
   return row;
+}
+
+/** A human-in-the-loop prompt: Jarvis is parked until this is answered. */
+function renderApproval(message) {
+  const row = document.createElement('div');
+  row.className = 'row approval';
+
+  const card = document.createElement('div');
+  card.className = `approval-card ${message.state}`;
+
+  const label = document.createElement('div');
+  label.className = 'approval-label';
+  label.textContent = message.state === 'open' ? 'Needs your approval' : 'Approval';
+  card.append(label);
+
+  const text = document.createElement('div');
+  text.className = 'approval-text';
+  text.textContent = message.content;
+  card.append(text);
+
+  if (message.state === 'open') {
+    const actions = document.createElement('div');
+    actions.className = 'approval-actions';
+    for (const choice of message.choices) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `approval-btn${choice.value === 'approve' ? ' primary' : ''}`;
+      button.textContent = choice.label || choice.value;
+      button.addEventListener('click', () => respondToApproval(message, choice.value));
+      actions.append(button);
+    }
+    card.append(actions);
+  } else {
+    const outcome = document.createElement('div');
+    outcome.className = 'approval-outcome';
+    const chosen = message.choices.find((c) => c.value === message.choice);
+    outcome.textContent = message.state === 'expired'
+      ? 'Expired without an answer'
+      : `You chose: ${chosen ? chosen.label || chosen.value : message.choice}`;
+    card.append(outcome);
+  }
+
+  row.append(card);
+  return row;
+}
+
+function respondToApproval(message, choice) {
+  if (message.state !== 'open') return;
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+    systemNote('Not connected — could not send your answer.');
+    return;
+  }
+  message.state = 'answered';
+  message.choice = choice;
+  saveTranscript();
+  render();
+  state.ws.send(JSON.stringify({
+    id: `evt_${uuid()}`,
+    type: 'event',
+    event: 'approval.respond',
+    sessionId: state.sessionId,
+    data: { approvalId: message.approvalId, choice },
+  }));
+}
+
+function findApproval(approvalId) {
+  return state.messages.find((m) => m.role === 'approval' && m.approvalId === approvalId);
 }
 
 function addMessage(message) {
@@ -308,15 +387,80 @@ function handleEvent(event) {
     }
 
     case 'execution.completed':
+      state.progress = '';
       settle(event.data.messageId, 'sent');
       break;
 
+    // Anything n8n pushes mid-run: which tool is running, what it found.
+    case 'tool.started':
+    case 'tool.progress':
+    case 'tool.finished':
+    case 'execution.progress':
+      state.progress = event.data.content || '';
+      render();
+      break;
+
+    case 'approval.request':
+      addMessage({
+        id: uuid(),
+        role: 'approval',
+        approvalId: event.data.approvalId,
+        content: event.data.content || 'Jarvis needs your approval to continue.',
+        choices: Array.isArray(event.data.choices) && event.data.choices.length
+          ? event.data.choices
+          : [{ value: 'approve', label: 'Approve' }, { value: 'reject', label: 'Reject' }],
+        state: 'open',
+        ts: Date.now(),
+      });
+      break;
+
+    case 'approval.resolved': {
+      // Also fires for an answer given on another device.
+      const approval = findApproval(event.data.approvalId);
+      if (approval) {
+        approval.state = 'answered';
+        approval.choice = event.data.choice;
+        saveTranscript();
+        render();
+      }
+      break;
+    }
+
+    case 'approval.expired': {
+      const approval = findApproval(event.data.approvalId);
+      if (approval && approval.state === 'open') {
+        approval.state = 'expired';
+        saveTranscript();
+        render();
+      }
+      break;
+    }
+
     case 'execution.failed':
+      state.progress = '';
       settle(event.data.messageId, 'failed');
       break;
 
     case 'error': {
-      const { code, message, messageId } = event.data || {};
+      const { code, message, messageId, approvalId } = event.data || {};
+      if (code === 'APPROVAL_NOT_FOUND' && approvalId) {
+        const approval = findApproval(approvalId);
+        if (approval) {
+          approval.state = 'expired';
+          saveTranscript();
+          render();
+        }
+        return;
+      }
+      if (code === 'APPROVAL_FAILED' && approvalId) {
+        // The resume call failed - let them try again.
+        const approval = findApproval(approvalId);
+        if (approval) {
+          approval.state = 'open';
+          saveTranscript();
+          render();
+        }
+      }
       if (messageId) settle(messageId, 'failed');
       else if (state.thinking > 0) state.thinking -= 1;
       systemNote(`${code || 'ERROR'}: ${message || 'Something went wrong.'}`);

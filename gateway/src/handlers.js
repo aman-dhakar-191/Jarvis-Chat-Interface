@@ -193,6 +193,72 @@ async function startAsyncExecution(ctx, connection, { payload, messageId }) {
   }
 }
 
+/**
+ * `approval.respond` - the user answered a human-in-the-loop prompt.
+ * The gateway resumes the parked n8n execution on their behalf; the client
+ * never holds the resume URL.
+ */
+async function handleApprovalRespond(ctx, connection, event) {
+  const { config, approvals, registry } = ctx;
+  const approvalId = event.data.approvalId ? String(event.data.approvalId) : '';
+  const choice = typeof event.data.choice === 'string' ? event.data.choice : '';
+
+  if (!approvalId || !choice) {
+    return sendError(connection, ERROR_CODES.INVALID_MESSAGE, 'approval.respond requires data.approvalId and data.choice');
+  }
+
+  const pending = approvals.get(approvalId);
+  if (!pending) {
+    return sendError(connection, ERROR_CODES.APPROVAL_NOT_FOUND, 'That approval is unknown, already answered, or expired', { approvalId });
+  }
+  // Only the user the approval was raised for may answer it.
+  if (pending.userId && pending.userId !== connection.userId) {
+    return sendError(connection, ERROR_CODES.APPROVAL_NOT_FOUND, 'That approval is unknown, already answered, or expired', { approvalId });
+  }
+
+  // Settle first so a double-tap cannot resume the workflow twice.
+  approvals.settle(approvalId);
+  connection.send(protocol.makeAck(event.id, 'accepted', { approvalId }));
+
+  const body = {
+    approvalId,
+    choice,
+    approved: choice === 'approve',
+    comment: typeof event.data.comment === 'string' ? event.data.comment : null,
+    userId: connection.userId,
+    sessionId: pending.sessionId,
+    respondedAt: new Date().toISOString(),
+  };
+
+  let ok = false;
+  try {
+    const response = await fetch(pending.resumeUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
+    });
+    ok = response.ok;
+    if (!ok) logger.error('resume call rejected', { approvalId, status: response.status });
+  } catch (err) {
+    logger.error('resume call failed', { approvalId, error: err.message });
+  }
+
+  if (!ok) {
+    return sendError(connection, ERROR_CODES.APPROVAL_FAILED, 'Could not resume the workflow in n8n', { approvalId });
+  }
+
+  logger.info('approval resumed', { approvalId, choice, sessionId: pending.sessionId });
+  // Tell every device in the session, so a second phone stops showing buttons.
+  registry.deliver(
+    { sessionId: pending.sessionId },
+    protocol.makeEvent('approval.resolved', {
+      sessionId: pending.sessionId,
+      data: { approvalId, choice, by: connection.userId },
+    }),
+  );
+}
+
 function handlePing(ctx, connection, event) {
   connection.send(
     protocol.makeEvent('connection.pong', { sessionId: connection.sessionId, data: { echo: event.data } }),
@@ -208,6 +274,8 @@ async function dispatch(ctx, connection, event) {
       return connection.send(protocol.makeAck(event.id, 'accepted'));
     case 'user.message':
       return handleUserMessage(ctx, connection, event);
+    case 'approval.respond':
+      return handleApprovalRespond(ctx, connection, event);
     case 'connection.ping':
       return handlePing(ctx, connection, event);
     default:
