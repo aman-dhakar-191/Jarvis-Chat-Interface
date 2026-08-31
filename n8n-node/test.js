@@ -120,6 +120,8 @@ check('the trigger webhook is a normal webhook, not a resume webhook', () => {
   assert.equal(hook.httpMethod, 'POST');
   assert.equal(hook.restartWebhook, undefined, 'a trigger must not set restartWebhook');
   assert.equal(hook.path, '={{$parameter["path"]}}');
+  // Without this n8n registers at /webhook/<webhookId>/<path> and the gateway 404s.
+  assert.equal(hook.isFullPath, true, 'a fixed-path trigger must set isFullPath');
 });
 
 check('the trigger defaults to the path the gateway expects', () => {

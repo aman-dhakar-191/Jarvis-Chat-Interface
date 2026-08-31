@@ -25,6 +25,10 @@ export class JarvisTrigger implements INodeType {
 				name: 'default',
 				httpMethod: 'POST',
 				responseMode: '={{$parameter["responseMode"]}}',
+				// Without isFullPath, n8n prefixes the webhookId to the path and the
+				// webhook registers at /webhook/<uuid>/<path> instead of
+				// /webhook/<path>. n8n's own Webhook node sets this for the same reason.
+				isFullPath: true,
 				path: '={{$parameter["path"]}}',
 			},
 		],
@@ -35,7 +39,9 @@ export class JarvisTrigger implements INodeType {
 				type: 'string',
 				default: 'jarvis-chat',
 				required: true,
-				description: 'Webhook path. Must match the gateway\'s N8N_WEBHOOK_URL.',
+				placeholder: 'jarvis-chat',
+				description:
+					"Webhook path, with no leading slash. The gateway's N8N_WEBHOOK_URL must end with this exact path.",
 			},
 			{
 				displayName: 'Respond',
