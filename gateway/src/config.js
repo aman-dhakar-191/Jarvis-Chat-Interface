@@ -48,6 +48,12 @@ function buildConfig(env = process.env) {
       // Approval resume URLs must start with this. Defaults to the n8n origin
       // derived from the webhook URL; set to '*' to disable the check.
       resumeUrlPrefix: (env.N8N_RESUME_URL_PREFIX || '').trim(),
+      // n8n exposes every webhook twice. The client can ask for the test path
+      // per message, so switching does not need a redeploy. Derived rather than
+      // configured, so it cannot drift from the production URL.
+      testWebhookUrl: (env.N8N_WEBHOOK_URL || '').includes('/webhook-test/')
+        ? env.N8N_WEBHOOK_URL
+        : (env.N8N_WEBHOOK_URL || '').replace('/webhook/', '/webhook-test/'),
     },
     approvalTimeoutMs: int(env, 'APPROVAL_TIMEOUT_MS', 3600000),
     pushSecret: env.PUSH_SECRET || '',

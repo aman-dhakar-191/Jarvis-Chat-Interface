@@ -29,7 +29,7 @@ connection is full-duplex, not request/response.
 | --- | --- | --- |
 | `session.join` | — | `sessionId` on the envelope. Optional: the gateway falls back to your stable default. |
 | `session.leave` | — | Detaches this connection from the session. |
-| `user.message` | `{ messageId?, content }` | `content` is required, ≤ 8000 chars. A `messageId` is generated if omitted. |
+| `user.message` | `{ messageId?, content, useTestWebhook? }` | `content` is required, ≤ 8000 chars. A `messageId` is generated if omitted. `useTestWebhook: true` routes just this message to n8n's `/webhook-test/` path. |
 | `connection.ping` | anything | Answered with `connection.pong`. |
 | `approval.respond` | `{ approvalId, choice, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. |
 
@@ -40,7 +40,7 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 
 | Event | `data` |
 | --- | --- |
-| `connection.ready` | `{ connectionId, userId, defaultSessionId, responseMode, authEnabled }` |
+| `connection.ready` | `{ connectionId, userId, defaultSessionId, responseMode, authEnabled, testWebhookAvailable }` |
 | `session.joined` | `{ connectionId, userId }` |
 | `execution.started` | `{ messageId }` |
 | `assistant.message` | `{ messageId, replyTo, content }` |

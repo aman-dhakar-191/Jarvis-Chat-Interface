@@ -6,7 +6,12 @@
  * the transcript on the device so a reload or reconnect loses nothing.
  * ------------------------------------------------------------------ */
 
-const KEYS = { url: 'jarvis.url', token: 'jarvis.token', session: 'jarvis.session' };
+const KEYS = {
+  url: 'jarvis.url',
+  token: 'jarvis.token',
+  session: 'jarvis.session',
+  testMode: 'jarvis.testMode',
+};
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
 
 const el = {
@@ -22,6 +27,9 @@ const el = {
   fUrl: document.getElementById('f-url'),
   fToken: document.getElementById('f-token'),
   fSession: document.getElementById('f-session'),
+  fTest: document.getElementById('f-test'),
+  testRow: document.getElementById('test-row'),
+  testBadge: document.getElementById('test-badge'),
   mConn: document.getElementById('m-conn'),
   mUser: document.getElementById('m-user'),
   mMode: document.getElementById('m-mode'),
@@ -75,6 +83,7 @@ const state = {
   userId: null,
   mode: null,
   manualClose: false,
+  testMode: store.get(KEYS.testMode) === '1',
 };
 
 /* ---------------- transcript persistence ---------------- */
@@ -377,6 +386,7 @@ function handleEvent(event) {
       state.connectionId = event.data.connectionId;
       state.userId = event.data.userId;
       state.mode = event.data.responseMode;
+      el.testRow.hidden = event.data.testWebhookAvailable === false;
       const preferred = event.data.defaultSessionId;
       if (preferred && !state.sessionId) {
         // First run on this device: adopt the gateway's stable conversation key.
@@ -546,7 +556,7 @@ function sendMessage(content) {
     event: 'user.message',
     timestamp: new Date().toISOString(),
     sessionId: state.sessionId,
-    data: { messageId, content },
+    data: { messageId, content, useTestWebhook: state.testMode },
   }));
 }
 
@@ -592,7 +602,13 @@ function updateMeta() {
   el.mMode.textContent = state.mode || '—';
 }
 
+/** Keep the header badge honest: test mode is easy to leave on by accident. */
+function applyTestMode() {
+  el.testBadge.hidden = !state.testMode;
+}
+
 function openSettings() {
+  el.fTest.checked = state.testMode;
   el.fUrl.value = store.get(KEYS.url);
   el.fToken.value = store.get(KEYS.token);
   el.fSession.value = state.sessionId;
@@ -614,6 +630,9 @@ el.settings.addEventListener('close', () => {
 
   store.set(KEYS.url, el.fUrl.value.trim());
   store.set(KEYS.token, sanitizeToken(el.fToken.value));
+  state.testMode = el.fTest.checked;
+  store.set(KEYS.testMode, state.testMode ? '1' : '');
+  applyTestMode();
 
   const nextSession = el.fSession.value.trim() || state.sessionId;
   if (nextSession !== state.sessionId) {
@@ -649,6 +668,7 @@ window.addEventListener('online', reconnectNow);
 window.addEventListener('offline', () => setBanner('You are offline.'));
 
 loadTranscript();
+applyTestMode();
 render();
 setStatus('closed', 'connecting');
 connect();

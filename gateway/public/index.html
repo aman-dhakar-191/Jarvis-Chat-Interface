@@ -23,6 +23,7 @@
       <button id="status" class="status" type="button" aria-live="polite">
         <span class="dot"></span><span id="status-text">connecting</span>
       </button>
+      <span id="test-badge" class="test-badge" hidden>test</span>
     </div>
     <div class="actions">
       <button id="new-session" class="icon-btn" type="button" title="Clear this device's chat" aria-label="Clear this device's chat">
@@ -78,6 +79,14 @@
       <span>Session ID</span>
       <input id="f-session" type="text" placeholder="session_…" autocomplete="off" spellcheck="false">
       <small>Passed to n8n unchanged as your conversation key. Keep it the same to keep one Jarvis memory thread.</small>
+    </label>
+
+    <label class="toggle" id="test-row" hidden>
+      <span>
+        <strong>Use n8n test webhook</strong>
+        <small>Sends to <code>/webhook-test/</code> so the run shows on the n8n canvas. n8n arms it one request at a time — click <em>Execute workflow</em> before each message.</small>
+      </span>
+      <input id="f-test" type="checkbox">
     </label>
 
     <div class="sheet-meta">

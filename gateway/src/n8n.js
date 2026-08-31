@@ -58,10 +58,11 @@ function extractReply(payload, explicitPath = '', depth = 0) {
  * POST the normalized chat payload to the existing n8n webhook.
  * Returns { ok, status, body, reply, errorCode, errorMessage } - it never throws.
  */
-async function callWebhook(payload, config) {
-  const { webhookUrl, webhookSecret, timeoutMs, responsePath } = config.n8n;
+async function callWebhook(payload, config, { useTest = false } = {}) {
+  const { webhookUrl, testWebhookUrl, webhookSecret, timeoutMs, responsePath } = config.n8n;
+  const url = useTest ? testWebhookUrl : webhookUrl;
 
-  if (!webhookUrl) {
+  if (!url) {
     return { ok: false, errorCode: 'N8N_UNAVAILABLE', errorMessage: 'N8N_WEBHOOK_URL is not configured' };
   }
 
@@ -71,7 +72,7 @@ async function callWebhook(payload, config) {
   const startedAt = Date.now();
   let response;
   try {
-    response = await fetch(webhookUrl, {
+    response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -79,11 +80,13 @@ async function callWebhook(payload, config) {
     });
   } catch (err) {
     const timedOut = err.name === 'TimeoutError' || err.name === 'AbortError';
-    logger.error('n8n request failed', { messageId: payload.messageId, error: err.message, timedOut });
+    logger.error('n8n request failed', { messageId: payload.messageId, error: err.message, timedOut, useTest });
     return {
       ok: false,
       errorCode: timedOut ? 'EXECUTION_TIMEOUT' : 'N8N_UNAVAILABLE',
-      errorMessage: timedOut ? `Jarvis did not respond within ${timeoutMs}ms` : `Could not reach n8n: ${err.message}`,
+      errorMessage: timedOut
+        ? `Jarvis did not respond within ${timeoutMs}ms`
+        : `Could not reach n8n: ${err.message}`,
     };
   }
 
@@ -107,11 +110,13 @@ async function callWebhook(payload, config) {
       status: response.status,
       body,
       errorCode: 'EXECUTION_FAILED',
-      errorMessage: `n8n responded with HTTP ${response.status}`,
+      errorMessage: useTest && response.status === 404
+        ? 'The n8n test webhook is not listening. Click "Execute workflow" in n8n before each message, or turn off test mode.'
+        : `n8n responded with HTTP ${response.status}`,
     };
   }
 
-  logger.info('n8n responded', { messageId: payload.messageId, status: response.status, durationMs });
+  logger.info('n8n responded', { messageId: payload.messageId, status: response.status, durationMs, useTest });
   return { ok: true, status: response.status, body, durationMs, reply: extractReply(body, responsePath) };
 }
 

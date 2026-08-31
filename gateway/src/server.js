@@ -173,6 +173,7 @@ function createServer(config) {
           defaultSessionId: connection.defaultSessionId,
           responseMode: config.n8n.responseMode,
           authEnabled: config.authEnabled,
+          testWebhookAvailable: Boolean(config.n8n.testWebhookUrl),
         },
       }),
     );

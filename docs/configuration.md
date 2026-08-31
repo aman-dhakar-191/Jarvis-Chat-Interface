@@ -157,7 +157,23 @@ n8n exposes every webhook twice, and the difference trips everyone up once.
 | Lifetime | Always | **One request**, then dead |
 | Where you see the run | Executions tab | Live on the canvas |
 
-### Switching, in one word
+### Switching from the app
+
+Open the app's settings and turn on **Use n8n test webhook**. That message, and
+every one after it, goes to `/webhook-test/` instead - no redeploy, and it is
+per device, so your phone can be in test mode while the gateway keeps serving
+production to everything else.
+
+A **test** badge sits next to the connection status while it is on, because
+leaving it on by accident produces 404s that look like a broken gateway. If the
+test webhook is not armed, the app says so instead of showing a bare 404:
+
+> The n8n test webhook is not listening. Click "Execute workflow" in n8n before
+> each message, or turn off test mode.
+
+The toggle is hidden when the gateway has no test URL to derive.
+
+### Switching the whole gateway, in one word
 
 ```bash
 cd /docker/jarvis/gateway

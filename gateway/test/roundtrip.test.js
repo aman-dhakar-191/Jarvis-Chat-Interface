@@ -578,3 +578,68 @@ test('progress events from n8n stream through mid-execution', async (t) => {
   assert.equal((await client.waitForEvent('tool.started')).data.content, 'Searching your email…');
   assert.equal((await client.waitForEvent('tool.finished')).data.content, 'Found 3 messages');
 });
+
+/* ---------------- test-webhook toggle ---------------- */
+
+test('a message can be routed to n8n\'s test webhook per message', async (t) => {
+  const hits = [];
+  const http = require('node:http');
+  const n8n = http.createServer((req, res) => {
+    hits.push(req.url);
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ reply: `served ${req.url}` }));
+    });
+  });
+  await new Promise((r) => n8n.listen(0, '127.0.0.1', r));
+  const port = n8n.address().port;
+  const gateway = await startGateway({
+    ...AUTH,
+    N8N_WEBHOOK_URL: `http://127.0.0.1:${port}/webhook/jarvis-chat`,
+  });
+  t.after(async () => {
+    await gateway.stop();
+    await new Promise((r) => n8n.close(r));
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  const ready = await client.waitForEvent('connection.ready');
+  assert.equal(ready.data.testWebhookAvailable, true);
+
+  client.send({ event: 'user.message', sessionId: 's1', data: { content: 'prod please' } });
+  assert.equal((await client.waitForEvent('assistant.message')).data.content, 'served /webhook/jarvis-chat');
+
+  client.send({ event: 'user.message', sessionId: 's1', data: { content: 'test please', useTestWebhook: true } });
+  await client.waitFor((f) => f.event === 'assistant.message' && /webhook-test/.test(f.data.content));
+
+  assert.deepEqual(hits, ['/webhook/jarvis-chat', '/webhook-test/jarvis-chat']);
+});
+
+test('an unarmed test webhook explains itself instead of a bare 404', async (t) => {
+  const http = require('node:http');
+  const n8n = http.createServer((req, res) => {
+    // n8n answers 404 on the test path until "Execute workflow" arms it.
+    const code = req.url.includes('/webhook-test/') ? 404 : 200;
+    res.writeHead(code, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(code === 404 ? { message: 'not registered' } : { reply: 'ok' }));
+  });
+  await new Promise((r) => n8n.listen(0, '127.0.0.1', r));
+  const port = n8n.address().port;
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: `http://127.0.0.1:${port}/webhook/jarvis-chat` });
+  t.after(async () => {
+    await gateway.stop();
+    await new Promise((r) => n8n.close(r));
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+
+  client.send({ event: 'user.message', sessionId: 's1', data: { content: 'hi', useTestWebhook: true } });
+  const error = await client.waitForEvent('error');
+  assert.equal(error.data.code, 'EXECUTION_FAILED');
+  assert.match(error.data.message, /Execute workflow/);
+});

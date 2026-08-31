@@ -67,26 +67,31 @@ async function handleUserMessage(ctx, connection, event) {
     connectionId: connection.id,
   });
 
+  // The client may route a single message to n8n's test webhook, so switching
+  // does not need a gateway redeploy.
+  const useTest = event.data.useTestWebhook === true;
+
   logger.info('forwarding to n8n', {
     connectionId: connection.id,
     sessionId: connection.sessionId,
     messageId,
     mode: config.n8n.responseMode,
+    useTest,
   });
 
   if (config.n8n.responseMode === 'async') {
-    return startAsyncExecution(ctx, connection, { payload, messageId });
+    return startAsyncExecution(ctx, connection, { payload, messageId, useTest });
   }
-  return runSyncExecution(ctx, connection, { payload, messageId });
+  return runSyncExecution(ctx, connection, { payload, messageId, useTest });
 }
 
-async function runSyncExecution(ctx, connection, { payload, messageId }) {
+async function runSyncExecution(ctx, connection, { payload, messageId, useTest = false }) {
   const { config } = ctx;
   const sessionId = payload.sessionId;
 
   let result;
   try {
-    result = await n8n.callWebhook(payload, config);
+    result = await n8n.callWebhook(payload, config, { useTest });
   } catch (err) {
     logger.error('unexpected n8n failure', { messageId, error: err.stack });
     result = { ok: false, errorCode: ERROR_CODES.INTERNAL_ERROR, errorMessage: 'Gateway failed while calling n8n' };
@@ -138,7 +143,7 @@ async function runSyncExecution(ctx, connection, { payload, messageId }) {
  * Async mode: fire the webhook, do not wait for its body. n8n calls back into
  * POST /api/push with the same messageId once Jarvis has finished.
  */
-async function startAsyncExecution(ctx, connection, { payload, messageId }) {
+async function startAsyncExecution(ctx, connection, { payload, messageId, useTest = false }) {
   const { config, executions } = ctx;
   const sessionId = payload.sessionId;
 
@@ -162,7 +167,7 @@ async function startAsyncExecution(ctx, connection, { payload, messageId }) {
     },
   });
 
-  const result = await n8n.callWebhook(payload, config);
+  const result = await n8n.callWebhook(payload, config, { useTest });
   if (!result.ok) {
     executions.settle(messageId);
     connection.inflight.delete(messageId);
