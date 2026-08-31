@@ -159,6 +159,7 @@ Jarvis keeps its memory.
 Full event reference: **[docs/protocol.md](docs/protocol.md)**.
 Config and day-to-day operations: **[docs/configuration.md](docs/configuration.md)**.
 Progress updates and approvals: **[docs/interactive.md](docs/interactive.md)**.
+Optional n8n community node: **[n8n-node/README.md](n8n-node/README.md)**.
 
 ## Tests
 
@@ -192,6 +193,9 @@ gateway/
   test/             end-to-end tests
   Dockerfile        production image, non-root, healthchecked
   docker-compose.yml  deployment behind Traefik
+n8n-node/           optional n8n community node (n8n-nodes-jarvis)
+  credentials/      Jarvis Gateway credential
+  nodes/Jarvis/     Send Progress / Notify / Ask for Approval
 docs/
   n8n-setup.md      wiring this to your existing Jarvis
   configuration.md  every setting, test vs production URLs, troubleshooting

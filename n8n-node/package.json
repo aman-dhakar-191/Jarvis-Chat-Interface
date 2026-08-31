@@ -1,0 +1,40 @@
+{
+  "name": "n8n-nodes-jarvis",
+  "version": "0.1.0",
+  "description": "n8n node for the Jarvis Gateway: send progress, notifications and human-in-the-loop approvals to the Jarvis chat app",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "jarvis",
+    "approval",
+    "human-in-the-loop"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "scripts": {
+    "build": "rm -rf dist && tsc && node scripts/copy-icons.js",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node test.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/JarvisGatewayApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Jarvis/Jarvis.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "n8n-workflow": "*",
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

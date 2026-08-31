@@ -1,5 +1,11 @@
 # Intermediate state, human-in-the-loop, and approvals
 
+> There are two ways to build this. The **[community node](../n8n-node/README.md)**
+> (`n8n-nodes-jarvis`) gives you real nodes and stores the push secret as a
+> credential — nicer, but it needs installing. The HTTP Request + Wait approach
+> below needs nothing and is proven end to end. Both drive the same gateway
+> endpoints, so you can start with one and move to the other.
+
 A plain request/response chat can only show a spinner while Jarvis works, and it
 cannot ask you anything mid-run. The gateway supports both, because it holds a
 socket the whole time and n8n can reach back into it.
