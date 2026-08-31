@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Jarvis</title>
+<meta name="description" content="Custom full-duplex chat client for Jarvis">
+<meta name="theme-color" content="#0b0b12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="identity">
+      <h1>Jarvis</h1>
+      <button id="status" class="status" type="button" aria-live="polite">
+        <span class="dot"></span><span id="status-text">connecting</span>
+      </button>
+    </div>
+    <div class="actions">
+      <button id="new-session" class="icon-btn" type="button" title="Clear this device's chat" aria-label="Clear this device's chat">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button id="open-settings" class="icon-btn" type="button" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9.5a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="transcript" class="transcript" role="log" aria-live="polite">
+    <div id="empty" class="empty">
+      <div class="empty-icon"><img src="/icons/icon-192.png" alt=""></div>
+      <p class="empty-title">Ask Jarvis anything</p>
+      <p class="empty-sub">Messages go straight to your n8n workflow.</p>
+    </div>
+  </main>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <form id="composer" class="composer">
+    <textarea id="input" rows="1" placeholder="Message Jarvis…" autocomplete="off"
+              autocapitalize="sentences" enterkeyhint="send"></textarea>
+    <button id="send" class="send" type="submit" aria-label="Send">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12L4 4l3.5 8L4 20z"/></svg>
+    </button>
+  </form>
+</div>
+
+<dialog id="settings" class="sheet">
+  <form method="dialog" class="sheet-inner">
+    <header class="sheet-head">
+      <h2>Settings</h2>
+      <button value="cancel" class="icon-btn" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+
+    <label class="field">
+      <span>Gateway URL</span>
+      <input id="f-url" type="url" inputmode="url" placeholder="wss://jarvis.example.com" autocomplete="off">
+      <small>Leave blank to use the server this page came from.</small>
+    </label>
+
+    <label class="field">
+      <span>Access token</span>
+      <input id="f-token" type="password" placeholder="your AUTH_TOKENS value" autocomplete="current-password">
+      <small>Stored on this device only. Sent as a WebSocket subprotocol, never in the URL.</small>
+    </label>
+
+    <label class="field">
+      <span>Session ID</span>
+      <input id="f-session" type="text" placeholder="session_…" autocomplete="off" spellcheck="false">
+      <small>Passed to n8n unchanged as your conversation key. Keep it the same to keep one Jarvis memory thread.</small>
+    </label>
+
+    <div class="sheet-meta">
+      <div><span>Connection</span><code id="m-conn">—</code></div>
+      <div><span>User</span><code id="m-user">—</code></div>
+      <div><span>Mode</span><code id="m-mode">—</code></div>
+    </div>
+
+    <footer class="sheet-actions">
+      <button id="f-clear" value="clear" class="btn ghost danger" type="submit">Clear chat</button>
+      <button value="save" class="btn primary" type="submit">Save &amp; reconnect</button>
+    </footer>
+  </form>
+</dialog>
+
+<script src="/app.js"></script>
+</body>
+</html>

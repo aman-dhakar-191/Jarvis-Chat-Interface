@@ -1,0 +1,317 @@
+:root {
+  --bg: #0b0b12;
+  --surface: #14141f;
+  --surface-2: #1c1c2b;
+  --border: #262637;
+  --text: #ecebf5;
+  --muted: #8f8fa8;
+  --accent: #6d5bf0;
+  --accent-soft: #2a2450;
+  --danger: #f4676b;
+  --ok: #3ddc97;
+  --radius: 18px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* `dvh` keeps the composer above the mobile keyboard as the viewport shrinks. */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+/* ---------- top bar ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(var(--safe-t) + 10px) 14px 10px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.identity { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.identity h1 { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.status[data-state="open"]   .dot { background: var(--ok); }
+.status[data-state="connecting"] .dot { background: #e8b64c; animation: pulse 1.2s ease-in-out infinite; }
+.status[data-state="closed"] .dot { background: var(--danger); }
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+.actions { display: flex; gap: 4px; }
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px; height: 36px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- transcript ---------- */
+.transcript {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A growing spacer anchors a short conversation to the bottom of the screen,
+   the way a chat app should, without the top-clipping that `justify-content:
+   flex-end` causes once the transcript overflows. */
+.transcript.has-messages::before {
+  content: '';
+  margin-top: auto;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  padding: 24px;
+}
+.empty-icon img { width: 56px; height: 56px; border-radius: 15px; opacity: 0.9; }
+.empty-title { color: var(--text); font-size: 17px; font-weight: 600; margin: 14px 0 4px; }
+.empty-sub { margin: 0; font-size: 13px; }
+
+.row { display: flex; flex-direction: column; max-width: 88%; }
+.row.user { align-self: flex-end; align-items: flex-end; }
+.row.assistant, .row.system { align-self: flex-start; align-items: flex-start; }
+.row.system { max-width: 100%; align-self: center; }
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: rise 0.18s ease-out;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+
+.row.user .bubble {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+.row.assistant .bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 6px;
+}
+.row.user.pending .bubble { opacity: 0.62; }
+.row.user.failed .bubble { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+
+.meta {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 6px 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.retry {
+  border: 0; background: none; padding: 0;
+  color: var(--danger); font: inherit; font-size: 11px;
+  text-decoration: underline; cursor: pointer;
+}
+
+.row.system .bubble {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: #ffc9cb;
+  font-size: 13px;
+  border-radius: 12px;
+}
+
+/* thinking indicator */
+.thinking { display: flex; gap: 4px; padding: 14px; }
+.thinking i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted);
+  animation: blink 1.3s infinite ease-in-out;
+}
+.thinking i:nth-child(2) { animation-delay: 0.18s; }
+.thinking i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes blink { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+
+/* ---------- banner ---------- */
+.banner {
+  margin: 0 14px 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  background: color-mix(in srgb, #e8b64c 14%, transparent);
+  border: 1px solid color-mix(in srgb, #e8b64c 32%, transparent);
+  color: #f2d69a;
+}
+
+/* ---------- composer ---------- */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px calc(10px + var(--safe-b));
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  max-height: 40dvh;
+  padding: 11px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  /* 16px avoids iOS Safari zooming the page on focus */
+  font-size: 16px;
+  line-height: 1.45;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.composer textarea:focus { border-color: var(--accent); }
+
+.send {
+  display: grid;
+  place-items: center;
+  width: 42px; height: 42px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.send:active { transform: scale(0.94); }
+.send:disabled { opacity: 0.35; cursor: default; }
+.send svg { width: 19px; height: 19px; fill: currentColor; stroke: none; }
+
+/* ---------- settings sheet ---------- */
+.sheet {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  width: min(520px, 100%);
+  margin: auto auto 0;
+}
+.sheet::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
+
+.sheet-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  padding: 18px 18px calc(18px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: slideup 0.2s ease-out;
+}
+@keyframes slideup { from { transform: translateY(16px); opacity: 0; } }
+
+@media (min-width: 560px) {
+  .sheet { margin: auto; }
+  .sheet-inner { border-radius: 20px; }
+}
+
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.sheet-head h2 { margin: 0; font-size: 17px; font-weight: 650; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span { font-size: 13px; font-weight: 550; }
+.field input {
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+}
+.field input:focus { border-color: var(--accent); }
+.field small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+.sheet-meta {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.sheet-meta div { display: flex; justify-content: space-between; gap: 12px; }
+.sheet-meta span { color: var(--muted); }
+.sheet-meta code { font-size: 11px; overflow-wrap: anywhere; text-align: right; }
+
+.sheet-actions { display: flex; gap: 8px; }
+.btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.btn.ghost { background: transparent; border-color: var(--border); color: var(--text); }
+.btn.ghost.danger { color: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

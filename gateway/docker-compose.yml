@@ -1,0 +1,41 @@
+# Jarvis Gateway behind the Traefik you already run.
+#
+#   docker compose up -d --build
+#
+# Traefik terminates TLS and upgrades the WebSocket for you - WebSocket support
+# is automatic, there is no extra Traefik configuration to write.
+
+services:
+  jarvis-gateway:
+    build: .
+    image: jarvis-gateway:latest
+    container_name: jarvis-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 3000
+    networks:
+      - proxy
+      - n8n
+    labels:
+      traefik.enable: "true"
+      # --- change this to your own domain ----------------------------------
+      traefik.http.routers.jarvis.rule: "Host(`jarvis.example.com`)"
+      traefik.http.routers.jarvis.entrypoints: "websecure"
+      traefik.http.routers.jarvis.tls: "true"
+      # Match the certresolver name your Traefik already uses.
+      traefik.http.routers.jarvis.tls.certresolver: "letsencrypt"
+      traefik.http.services.jarvis.loadbalancer.server.port: "3000"
+      # Tell Traefik which network to reach this container on.
+      traefik.docker.network: "proxy"
+
+networks:
+  # These must match networks that already exist on your VPS: `docker network ls`.
+  # `proxy` is whatever network your Traefik container is attached to.
+  # `n8n` lets the gateway reach n8n privately, without going out to the internet.
+  proxy:
+    external: true
+    name: proxy
+  n8n:
+    external: true
+    name: n8n
