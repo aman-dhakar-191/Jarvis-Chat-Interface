@@ -39,23 +39,82 @@
         "workflowId": {
           "__rl": true,
           "mode": "list",
-          "value": "",
-          "cachedResultName": "SELECT YOUR EXISTING JARVIS WORKFLOW"
+          "value": "y0jU4wbnPyQRneex",
+          "cachedResultName": "Supervisor Agent"
         },
         "options": {
           "waitForSubWorkflow": true
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chatInput": "={{ $json.content }}",
+            "sessionId": "={{ $json.sessionId }}",
+            "origin": "custom_chat",
+            "user_id": "={{ $json.userId }}",
+            "platform": "web"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "chatInput",
+              "displayName": "chatInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "origin",
+              "displayName": "origin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
         }
       },
       "id": "3f7adce2-24f2-471b-962c-033974531cc2",
-      "name": "Existing Jarvis Workflow",
+      "name": "Supervisor Agent",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
       "position": [
         660,
         300
       ],
-      "disabled": true,
-      "notes": "Pick your existing Jarvis workflow, then enable this node. While disabled it passes data straight through so you can test the transport first."
+      "notes": "Calls the existing Supervisor Agent as a sub-workflow. Nothing in the Supervisor changes - this is an additional entry point alongside its Chat/Telegram triggers."
     },
     {
       "parameters": {
@@ -102,18 +161,7 @@
       "main": [
         [
           {
-            "node": "Existing Jarvis Workflow",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Existing Jarvis Workflow": {
-      "main": [
-        [
-          {
-            "node": "Format Reply",
+            "node": "Supervisor Agent",
             "type": "main",
             "index": 0
           }
@@ -125,6 +173,17 @@
         [
           {
             "node": "Respond to Gateway",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supervisor Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Reply",
             "type": "main",
             "index": 0
           }
