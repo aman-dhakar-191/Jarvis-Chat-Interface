@@ -26,8 +26,9 @@ services:
     labels:
       # Traefik runs with exposedbydefault=false, so this is required.
       traefik.enable: "true"
-      # --- the only line you must change: use your own domain ---------------
-      traefik.http.routers.jarvis.rule: "Host(`jarvis.example.com`)"
+      # Hostinger provides wildcard DNS on *.srv1918051.hstgr.cloud, so this
+      # host resolves to the VPS with no DNS record to create.
+      traefik.http.routers.jarvis.rule: "Host(`jarvis.srv1918051.hstgr.cloud`)"
       traefik.http.routers.jarvis.entrypoints: "websecure"
       traefik.http.routers.jarvis.tls: "true"
       traefik.http.routers.jarvis.tls.certresolver: "letsencrypt"
