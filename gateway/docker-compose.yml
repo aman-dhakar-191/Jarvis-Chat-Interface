@@ -1,9 +1,12 @@
-# Jarvis Gateway behind the Traefik you already run.
+# Jarvis Gateway, configured for the srv1918051 VPS.
 #
 #   docker compose up -d --build
 #
-# Traefik terminates TLS and upgrades the WebSocket for you - WebSocket support
-# is automatic, there is no extra Traefik configuration to write.
+# Traefik there runs in HOST network mode, so there is no shared proxy network:
+# it discovers this container over the Docker socket and routes straight to its
+# bridge IP. That is why only the n8n network is attached below - one network
+# means Traefik has no ambiguity about which IP to use, and the gateway can
+# still reach n8n privately.
 
 services:
   jarvis-gateway:
@@ -19,27 +22,21 @@ services:
     # ports:
     #   - "127.0.0.1:3000:3000"
     networks:
-      - proxy
       - n8n
     labels:
+      # Traefik runs with exposedbydefault=false, so this is required.
       traefik.enable: "true"
-      # --- change this to your own domain ----------------------------------
+      # --- the only line you must change: use your own domain ---------------
       traefik.http.routers.jarvis.rule: "Host(`jarvis.example.com`)"
       traefik.http.routers.jarvis.entrypoints: "websecure"
       traefik.http.routers.jarvis.tls: "true"
-      # Match the certresolver name your Traefik already uses.
       traefik.http.routers.jarvis.tls.certresolver: "letsencrypt"
       traefik.http.services.jarvis.loadbalancer.server.port: "3000"
-      # Tell Traefik which network to reach this container on.
-      traefik.docker.network: "proxy"
+      traefik.docker.network: "n8n-z44q_default"
 
 networks:
-  # These must match networks that already exist on your VPS: `docker network ls`.
-  # `proxy` is whatever network your Traefik container is attached to.
-  # `n8n` lets the gateway reach n8n privately, without going out to the internet.
-  proxy:
-    external: true
-    name: proxy
+  # n8n's existing compose network. Joining it lets the gateway reach n8n at
+  # http://n8n:5678 without leaving the host.
   n8n:
     external: true
-    name: n8n
+    name: n8n-z44q_default
