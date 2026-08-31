@@ -26,12 +26,43 @@ do and wants permission first. A question answers `answer`; an approval answers
 
 ### Where to put a blocking prompt
 
-Put it **inside the tool's own sub-workflow**, not in the agent's tool list.
-A community node exposed with `usableAsTool` is unreliable
-([n8n#12593](https://github.com/n8n-io/n8n/issues/12593) - "Unrecognized node
-type" at execution), whereas a sub-workflow that parks works normally: the
-agent calls the Email subagent, that sub-workflow parks, your phone buzzes, and
-it resumes with your answer. The agent simply experiences a slow tool.
+**Not inside a sub-workflow that is attached as an AI tool.** When a
+sub-workflow invoked as an agent tool hits a wait, the agent does not wait for
+it - it returns immediately and carries on
+([n8n#18373](https://github.com/n8n-io/n8n/issues/18373),
+[community report](https://community.n8n.io/t/subworkflow-wait-issue-still-present-in-ai-tool-call/239477)).
+The approval would appear on your phone while the workflow sailed past it.
+Exposing the node with `usableAsTool` is no better - community nodes are
+unreliable that way too ([n8n#12593](https://github.com/n8n-io/n8n/issues/12593)).
+
+Two placements that do work:
+
+| Placement | Parks correctly? | LLM runs again after? |
+| --- | --- | --- |
+| Main flow, after the agent | Yes | **No** - resumes at the next node |
+| A regular **Execute Sub-workflow** (not an ai_tool connection) | Yes | No |
+| Inside a sub-workflow attached as an **AI tool** | **No - broken** | - |
+
+### Approve, then act, without a second LLM call
+
+The cheapest and most predictable shape: let the agent *decide*, and let the
+main flow *execute*. The agent runs exactly once.
+
+```text
+Jarvis Trigger → Agent (proposes an action, does not perform it)
+               → Jarvis: Ask for Approval        ⏸ parks
+               → IF {{ $json.approved }}
+                    true  → Gmail: Send → Format Reply
+                    false → Format Reply ("Cancelled")
+```
+
+On resume the execution continues at the **next node**, so no second LLM round
+trip, no extra tokens, and the action that runs is exactly the one you saw -
+not something the model reinterpreted afterwards.
+
+Going back through the agent is only necessary when the model must *reason
+about* your answer - typically a question whose answer changes what to do next,
+rather than an approval of an action already decided.
 
 ---
 
