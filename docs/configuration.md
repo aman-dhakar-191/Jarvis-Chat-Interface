@@ -8,9 +8,14 @@ image, so a config change is an edit plus `docker compose up -d`.
 ```bash
 cd /docker/jarvis/gateway
 nano .env
-docker compose up -d          # recreates the container with the new env
+docker compose up -d --force-recreate      # picks up the new .env
 docker compose logs -f jarvis-gateway
 ```
+
+`--force-recreate` matters. Plain `up -d` often prints `Started` and reuses the
+existing container with the **old** environment, so an edited `.env` appears to
+do nothing. If Compose says `Started` rather than `Recreated`, your change did
+not land.
 
 `docker compose up -d` is a no-op when nothing changed, so it is safe to repeat.
 
@@ -27,7 +32,7 @@ Which command you need depends on what changed:
 
 | Changed | Command |
 | --- | --- |
-| `.env` only | `docker compose up -d` |
+| `.env` only | `docker compose up -d --force-recreate` |
 | Gateway code (after `git pull`) | `docker compose up -d --build` |
 | Nothing | neither — `up -d` is a no-op |
 
@@ -203,3 +208,5 @@ docker logs jarvis-gateway 2>&1 | grep '"level":"error"'
 | `N8N_UNAVAILABLE` | Wrong `N8N_WEBHOOK_URL`, or the gateway isn't on n8n's Docker network. |
 | Replies work, memory doesn't | The memory node isn't keyed on `{{ $json.sessionId }}`, or the session id changed. |
 | Approval buttons do nothing | `PUSH_SECRET` unset, or the resume URL is outside `N8N_RESUME_URL_PREFIX`. |
+| An `.env` edit had no effect | Compose reused the old container. Use `--force-recreate` and confirm with `docker compose config \| grep <VAR>`. |
+| Traefik returns `404 page not found` | The container has not been recreated since its labels changed, so Traefik never saw the new rule. `--force-recreate` re-fires the Docker event. |
