@@ -157,6 +157,19 @@ n8n exposes every webhook twice, and the difference trips everyone up once.
 | Lifetime | Always | **One request**, then dead |
 | Where you see the run | Executions tab | Live on the canvas |
 
+### Switching, in one word
+
+```bash
+cd /docker/jarvis/gateway
+./jarvis status      # which mode am I in, and is the gateway healthy?
+./jarvis test        # point at /webhook-test/ and restart
+./jarvis prod        # point back at /webhook/ and restart
+```
+
+It edits `N8N_WEBHOOK_URL` and recreates the container with `--force-recreate`,
+then prints the live value read back out of the container. Add `--no-restart`
+to change `.env` without recreating.
+
 ### Normal development — production plus the Executions tab
 
 Leave the workflow Active and watch **Executions** in the left sidebar. Every

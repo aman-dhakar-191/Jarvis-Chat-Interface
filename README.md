@@ -191,6 +191,7 @@ gateway/
     config.js       environment parsing
   public/           the web client (PWA)
   test/             end-to-end tests
+  jarvis            ./jarvis test | prod | status - switch webhook modes
   Dockerfile        production image, non-root, healthchecked
   docker-compose.yml  deployment behind Traefik
 n8n-node/           optional n8n community node (n8n-nodes-jarvis)

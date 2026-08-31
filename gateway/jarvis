@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Switch the gateway between n8n's production and test webhook URLs.
+#
+#   ./jarvis status          show the current mode and health
+#   ./jarvis test            point at /webhook-test/ (n8n canvas debugging)
+#   ./jarvis prod            point at /webhook/      (normal operation)
+#
+# Add --no-restart to edit .env without recreating the container.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+ENV_FILE=.env
+KEY=N8N_WEBHOOK_URL
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+[ -f "$ENV_FILE" ] || die "No $ENV_FILE here. Run this from the gateway directory."
+
+current_url() { grep -E "^${KEY}=" "$ENV_FILE" | head -1 | cut -d= -f2-; }
+
+mode_of() {
+  case "$1" in
+    */webhook-test/*) echo test ;;
+    */webhook/*)      echo prod ;;
+    *)                echo unknown ;;
+  esac
+}
+
+set_url() {
+  local url=$1
+  # Delete then append, so spacing or duplicate keys cannot defeat an in-place edit.
+  sed -i "/^${KEY}=/d" "$ENV_FILE"
+  printf '%s=%s\n' "$KEY" "$url" >> "$ENV_FILE"
+}
+
+restart() {
+  # --force-recreate: a plain `up -d` reuses the container and ignores .env.
+  docker compose up -d --force-recreate >/dev/null
+  printf 'gateway restarted\n'
+}
+
+show_status() {
+  local url mode
+  url=$(current_url); mode=$(mode_of "$url")
+  printf 'mode : %s\n' "$mode"
+  printf 'url  : %s\n' "$url"
+  if command -v docker >/dev/null && docker ps --format '{{.Names}}' | grep -qx jarvis-gateway; then
+    printf 'live : %s\n' "$(docker exec jarvis-gateway printenv "$KEY" 2>/dev/null || echo '(container not answering)')"
+    printf 'health: '; docker exec jarvis-gateway node -e \
+      "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>r.text()).then(console.log).catch(e=>console.log('unreachable:',e.message))" 2>/dev/null || echo unknown
+  fi
+  [ "$mode" = test ] && cat <<'NOTE'
+
+Reminder: the test URL is armed one request at a time. Click "Execute workflow"
+in n8n before each message, or it answers 404.
+NOTE
+  return 0
+}
+
+command=${1:-status}
+no_restart=false
+[ "${2:-}" = "--no-restart" ] && no_restart=true
+
+case "$command" in
+  status) show_status ;;
+  test)
+    url=$(current_url)
+    set_url "${url//\/webhook\//\/webhook-test\/}"
+    $no_restart || restart
+    show_status
+    ;;
+  prod)
+    url=$(current_url)
+    set_url "${url//\/webhook-test\//\/webhook\/}"
+    $no_restart || restart
+    show_status
+    ;;
+  *) die "usage: ./jarvis [status|test|prod] [--no-restart]" ;;
+esac
