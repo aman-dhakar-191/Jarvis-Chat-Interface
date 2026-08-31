@@ -39,6 +39,20 @@ const store = {
   },
 };
 
+// A WebSocket subprotocol must be an RFC 7230 token, so ':' and '=' are illegal
+// and make the WebSocket constructor throw. Pasting the whole
+// `AUTH_TOKENS=<token>:<userId>` line is an easy slip, so unwrap it rather than
+// failing with an opaque error.
+const TOKEN_PATTERN = /^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$/;
+
+function sanitizeToken(raw) {
+  let token = String(raw || '').trim();
+  token = token.replace(/^AUTH_TOKENS\s*=\s*/i, '');
+  const separator = token.indexOf(':');
+  if (separator !== -1) token = token.slice(0, separator);
+  return token.trim();
+}
+
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -259,7 +273,13 @@ function connect() {
   clearTimeout(state.retryTimer);
   if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) return;
 
-  const token = store.get(KEYS.token).trim();
+  const token = sanitizeToken(store.get(KEYS.token));
+  if (token && !TOKEN_PATTERN.test(token)) {
+    // Retrying cannot help, so stop rather than burning a backoff loop.
+    setStatus('closed', 'bad token');
+    setBanner('That access token contains characters that cannot be sent. Paste only the token itself — not the `AUTH_TOKENS=` line and not the `:userId` suffix.');
+    return;
+  }
   setStatus('connecting', state.attempt > 0 ? 'reconnecting' : 'connecting');
 
   let socket;
@@ -268,7 +288,7 @@ function connect() {
     socket = token ? new WebSocket(gatewayUrl(), ['bearer', token]) : new WebSocket(gatewayUrl());
   } catch (err) {
     setStatus('closed', 'bad URL');
-    setBanner(`Could not open ${gatewayUrl()} — check the gateway URL in settings.`);
+    setBanner(`Could not open ${gatewayUrl()} — check the gateway URL and access token in settings.`);
     return;
   }
   state.ws = socket;
@@ -593,7 +613,7 @@ el.settings.addEventListener('close', () => {
   if (action !== 'save') return;
 
   store.set(KEYS.url, el.fUrl.value.trim());
-  store.set(KEYS.token, el.fToken.value.trim());
+  store.set(KEYS.token, sanitizeToken(el.fToken.value));
 
   const nextSession = el.fSession.value.trim() || state.sessionId;
   if (nextSession !== state.sessionId) {

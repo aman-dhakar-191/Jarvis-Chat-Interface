@@ -71,7 +71,7 @@
     <label class="field">
       <span>Access token</span>
       <input id="f-token" type="password" placeholder="your AUTH_TOKENS value" autocomplete="current-password">
-      <small>Stored on this device only. Sent as a WebSocket subprotocol, never in the URL.</small>
+      <small>Just the token — no <code>AUTH_TOKENS=</code> prefix and no <code>:userId</code> suffix. Stored on this device only, and sent as a WebSocket subprotocol rather than in the URL.</small>
     </label>
 
     <label class="field">
