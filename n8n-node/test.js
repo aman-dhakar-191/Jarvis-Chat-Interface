@@ -124,6 +124,15 @@ check('the trigger webhook is a normal webhook, not a resume webhook', () => {
   assert.equal(hook.isFullPath, true, 'a fixed-path trigger must set isFullPath');
 });
 
+check('the trigger cannot offer responseNode, which cannot work behind it', () => {
+  const modes = t.properties.find((p) => p.name === 'responseMode');
+  const values = modes.options.map((o) => o.value);
+  assert.ok(!values.includes('responseNode'), 'Respond to Webhook only supports the core Webhook node');
+  assert.deepEqual(values, ['lastNode', 'onReceived']);
+  assert.equal(modes.default, 'lastNode');
+  assert.equal(t.webhooks[0].responseData, 'firstEntryJson', 'lastNode needs responseData');
+});
+
 check('the trigger defaults to the path the gateway expects', () => {
   assert.equal(t.properties.find((p) => p.name === 'path').default, 'jarvis-chat');
 });

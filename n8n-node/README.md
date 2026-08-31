@@ -8,7 +8,7 @@ parameters into a proper n8n credential.
 
 | Node | Purpose |
 | --- | --- |
-| **Jarvis Trigger** | Starts a workflow when a message arrives from the app. Replaces the Webhook + Normalize Chat Input pair, and accepts Telegram Trigger payloads too. |
+| **Jarvis Trigger** | Starts a workflow when a message arrives from the app. Replaces the Webhook + Normalize Chat Input pair, and accepts Telegram Trigger payloads too. Set **Respond → When Last Node Finishes** for sync mode. |
 | **Jarvis** | Sends progress, notifications and approval requests back to the app. |
 
 ## Operations
@@ -100,6 +100,24 @@ Create one **Jarvis Gateway API** credential:
 
 Hit **Test** — it calls `/health` and should come back green. Every Jarvis node
 then reuses it; the secret never appears in a workflow again.
+
+## Respond to Webhook does not work behind this trigger
+
+n8n's **Respond to Webhook** node only recognises the core `n8n-nodes-base.webhook`
+node. Behind a community trigger it fails with *"No Webhook node found in the
+workflow"*.
+
+So in sync mode set the trigger's **Respond** to **When Last Node Finishes** and
+end the workflow with the node that produces the reply - n8n returns that node's
+first item by itself. `responseNode` is therefore not offered as an option.
+
+```text
+Jarvis Trigger → … → Format Reply        ← the reply is this node's output
+```
+
+If you would rather keep a Respond to Webhook node, use the core **Webhook**
+node as the trigger instead, with a Code node for normalization - the
+arrangement in [docs/n8n-setup.md](../docs/n8n-setup.md).
 
 ## Gateway requirements
 

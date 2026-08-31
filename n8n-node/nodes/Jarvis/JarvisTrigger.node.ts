@@ -15,7 +15,8 @@ export class JarvisTrigger implements INodeType {
 		icon: 'file:jarvis.svg',
 		group: ['trigger'],
 		version: 1,
-		description: 'Starts the workflow when a message arrives from the Jarvis chat app',
+		description:
+			'Starts the workflow when a message arrives from the Jarvis chat app. In sync mode end the workflow with the node that produces the reply - Respond to Webhook does not work behind a community trigger.',
 		defaults: { name: 'Jarvis Trigger' },
 		inputs: [],
 		outputs: ['main'] as INodeTypeDescription['outputs'],
@@ -24,6 +25,9 @@ export class JarvisTrigger implements INodeType {
 				name: 'default',
 				httpMethod: 'POST',
 				responseMode: '={{$parameter["responseMode"]}}',
+				// Only consulted when responseMode is lastNode: return the first item
+				// of the final node, which is the formatted reply.
+				responseData: 'firstEntryJson',
 				// Without isFullPath, n8n prefixes the webhookId to the path and the
 				// webhook registers at /webhook/<uuid>/<path> instead of
 				// /webhook/<path>. n8n's own Webhook node sets this for the same reason.
@@ -46,12 +50,16 @@ export class JarvisTrigger implements INodeType {
 				displayName: 'Respond',
 				name: 'responseMode',
 				type: 'options',
-				default: 'responseNode',
+				// 'responseNode' is deliberately absent: n8n's Respond to Webhook node
+				// only recognises the core Webhook node, and fails with "No Webhook
+				// node found in the workflow" behind a community trigger.
+				default: 'lastNode',
 				options: [
 					{
-						name: "Using 'Respond to Webhook' Node",
-						value: 'responseNode',
-						description: 'Sync mode: the gateway waits for this workflow to answer',
+						name: 'When Last Node Finishes',
+						value: 'lastNode',
+						description:
+							'Sync mode. n8n returns the final node\'s first item, so no Respond to Webhook node is needed - and none will work here.',
 					},
 					{
 						name: 'Immediately',

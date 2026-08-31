@@ -237,6 +237,7 @@ docker logs jarvis-gateway 2>&1 | grep '"level":"error"'
 | `EXECUTION_TIMEOUT` | Jarvis exceeded `N8N_TIMEOUT_MS`. Raise it or switch to async. |
 | `N8N_UNAVAILABLE` | Wrong `N8N_WEBHOOK_URL`, or the gateway isn't on n8n's Docker network. |
 | Replies work, memory doesn't | The memory node isn't keyed on `{{ $json.sessionId }}`, or the session id changed. |
+| `No Webhook node found in the workflow` | A Respond to Webhook node sits behind the Jarvis Trigger. It only supports the core Webhook node - set the trigger's Respond to *When Last Node Finishes* and delete the Respond node. |
 | Approval buttons do nothing | `PUSH_SECRET` unset, or the resume URL is outside `N8N_RESUME_URL_PREFIX`. |
 | An `.env` edit had no effect | Compose reused the old container. Use `--force-recreate` and confirm with `docker compose config \| grep <VAR>`. |
 | Traefik returns `404 page not found` | The container has not been recreated since its labels changed, so Traefik never saw the new rule. `--force-recreate` re-fires the Docker event. |
