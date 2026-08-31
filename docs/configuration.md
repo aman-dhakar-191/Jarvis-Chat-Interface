@@ -46,6 +46,36 @@ exponential backoff — in practice the status pill blinks and nothing is lost.
 Anything mid-flight is not resumed, though: an in-progress message fails with a
 retry button, and pending approvals are dropped, since both live in memory.
 
+### Hostinger's Docker Manager rewrites docker-compose.yml
+
+If the VPS panel is used to edit this app's **Environment** table, Hostinger
+rewrites `gateway/docker-compose.yml`, replacing `env_file` usage with an
+`environment:` block of `${VAR}` interpolations. Any variable missing from that
+block then never reaches the container, however correct `.env` is - which is
+maddening to debug, because `.env` looks right and the container simply does not
+have the value.
+
+Check for it with:
+
+```bash
+git -C /docker/jarvis status --short          # gateway/docker-compose.yml modified?
+grep -n 'environment\|env_file' gateway/docker-compose.yml
+```
+
+Restore the repo's version and go back to `.env` as the only source of truth:
+
+```bash
+git -C /docker/jarvis checkout -- gateway/docker-compose.yml
+docker compose up -d --force-recreate
+```
+
+**Edit `.env` over SSH, not the panel's Environment table.** The panel is fine
+for reading state, starting and stopping.
+
+The same applies to `docker-compose.override.yml`: an `environment:` entry there
+outranks `env_file`, so a value pinned in it silently wins over `.env`. Use the
+override for ports and other structure, not for secrets.
+
 ### Local-only changes to docker-compose.yml
 
 `docker-compose.yml` is tracked, so editing it directly makes `git pull`
