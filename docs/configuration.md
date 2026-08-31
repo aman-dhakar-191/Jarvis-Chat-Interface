@@ -13,10 +13,62 @@ docker compose logs -f jarvis-gateway
 ```
 
 `docker compose up -d` is a no-op when nothing changed, so it is safe to repeat.
-Only `git pull` + `--build` rebuilds the image:
+
+## Updating to a new version
 
 ```bash
-git pull && docker compose up -d --build
+cd /docker/jarvis/gateway
+git pull
+docker compose up -d --build
+curl -s https://jarvis.srv1918051.hstgr.cloud/health
+```
+
+Which command you need depends on what changed:
+
+| Changed | Command |
+| --- | --- |
+| `.env` only | `docker compose up -d` |
+| Gateway code (after `git pull`) | `docker compose up -d --build` |
+| Nothing | neither — `up -d` is a no-op |
+
+`--build` matters because the image is built locally from source. Without it,
+Compose restarts the *old* image and your pull appears to do nothing.
+
+`.env` is gitignored, so your tokens and secrets survive every pull untouched.
+
+Downtime is about a second, and the web client reconnects on its own with
+exponential backoff — in practice the status pill blinks and nothing is lost.
+Anything mid-flight is not resumed, though: an in-progress message fails with a
+retry button, and pending approvals are dropped, since both live in memory.
+
+### Local-only changes to docker-compose.yml
+
+`docker-compose.yml` is tracked, so editing it directly makes `git pull`
+conflict. Put machine-specific tweaks in `docker-compose.override.yml` instead —
+Compose merges it automatically and it is gitignored:
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+```
+
+If you have already edited the tracked file, discard it first:
+
+```bash
+git checkout docker-compose.yml && git pull
+```
+
+### Rolling back
+
+```bash
+git log --oneline -5
+git checkout <sha> -- .          # or: git checkout <sha>
+docker compose up -d --build
+```
+
+Reclaim space from superseded images now and then:
+
+```bash
+docker image prune -f
 ```
 
 ## Environment reference
