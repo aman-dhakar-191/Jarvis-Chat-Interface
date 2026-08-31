@@ -44,19 +44,35 @@ Requires an Owner/Admin account on self-hosted n8n.
 
 ### Option B — from source, no npm account
 
-Build a tarball and install it into n8n's nodes directory. On the VPS:
+Build a tarball and install it into n8n's nodes directory. A VPS running only
+Docker usually has no Node or npm on the host, so build inside a throwaway
+container rather than installing a toolchain:
 
 ```bash
 cd /docker/jarvis/n8n-node
-npm install && npm run build && npm pack     # -> n8n-nodes-jarvis-0.1.0.tgz
 
-N8N=n8n-z44q-n8n-1                            # your n8n container name
+# Build the tarball. Nothing is installed on the host; the container is discarded.
+docker run --rm -v "$PWD":/src -w /src node:22-alpine \
+  sh -c 'npm install && npm run build && npm pack'
+ls -l n8n-nodes-jarvis-*.tgz          # should exist now
+
+N8N=n8n-z44q-n8n-1                    # your n8n container name
 docker cp n8n-nodes-jarvis-0.1.0.tgz $N8N:/tmp/
 docker exec -u node $N8N sh -c '
   mkdir -p /home/node/.n8n/nodes &&
   cd /home/node/.n8n/nodes &&
   npm install /tmp/n8n-nodes-jarvis-0.1.0.tgz'
 docker restart $N8N
+```
+
+If the host *does* have npm, `npm install && npm run build && npm pack` works
+directly and you can skip the first container.
+
+Verify it registered:
+
+```bash
+docker exec -u node $N8N ls /home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/dist/nodes/Jarvis
+docker logs $N8N 2>&1 | grep -i -E 'jarvis|community' | tail -20
 ```
 
 `/home/node/.n8n` is the persisted volume, so the node survives restarts. It
