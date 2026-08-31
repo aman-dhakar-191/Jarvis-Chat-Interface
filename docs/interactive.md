@@ -12,12 +12,26 @@ socket the whole time and n8n can reach back into it.
 
 Two mechanisms, and the difference matters:
 
-| | Progress | Approval |
-| --- | --- | --- |
-| Direction | n8n → you | n8n → you → n8n |
-| Blocks the workflow? | No | Yes, it parks |
-| n8n side | HTTP Request | **Wait** node + HTTP Request |
-| Use for | "Searching your email…" | "Send this email?" |
+| | Progress | Question | Approval |
+| --- | --- | --- | --- |
+| Direction | n8n → you | n8n → you → n8n | n8n → you → n8n |
+| Blocks the workflow? | No | Yes, it parks | Yes, it parks |
+| You reply with | nothing | free text | a button |
+| Use for | "Searching your email…" | "Which repo?" | "Send this email?" |
+
+**Question vs approval.** A question fills a gap - the workflow lacks a value it
+cannot infer. An approval is a gate - the workflow knows exactly what it would
+do and wants permission first. A question answers `answer`; an approval answers
+`choice` and `approved`.
+
+### Where to put a blocking prompt
+
+Put it **inside the tool's own sub-workflow**, not in the agent's tool list.
+A community node exposed with `usableAsTool` is unreliable
+([n8n#12593](https://github.com/n8n-io/n8n/issues/12593) - "Unrecognized node
+type" at execution), whereas a sub-workflow that parks works normally: the
+agent calls the Email subagent, that sub-workflow parks, your phone buzzes, and
+it resumes with your answer. The agent simply experiences a slow tool.
 
 ---
 
@@ -128,11 +142,34 @@ Body (JSON):
 Omit `choices` and you get Approve/Reject. Any number of choices works — they
 render as buttons in order, and the one with `value: "approve"` is highlighted.
 
+### Asking a question instead
+
+Same mechanism, different payload - set `inputType: 'text'` and the app shows a
+text field instead of buttons:
+
+```
+={{ JSON.stringify({
+  sessionId: $('Normalize Chat Input').first().json.sessionId,
+  event: 'approval.request',
+  resumeUrl: $execution.resumeUrl,
+  content: 'Which repository should I open the PR against?',
+  data: { inputType: 'text', placeholder: 'owner/repo' }
+}) }}
+```
+
+The typed answer arrives as `{{ $json.answer }}`. `approved` is `true` and
+`choice` is `'answered'`, so a downstream IF on `approved` still passes - a
+question is not a gate. An empty answer is refused and does not resume the
+workflow.
+
+With the community node this is just the **Ask a Question** operation.
+
 **After the Wait node**, your decision is on `$json`:
 
 ```
-{{ $json.approved }}   // true / false
-{{ $json.choice }}     // 'approve', 'reject', or your own value
+{{ $json.approved }}   // true / false ('answered' questions are true)
+{{ $json.choice }}     // 'approve', 'reject', your own value, or 'answered'
+{{ $json.answer }}     // the typed answer for a question, else null
 {{ $json.comment }}    // optional free text, or null
 {{ $json.userId }}     // who answered
 {{ $json.respondedAt }}

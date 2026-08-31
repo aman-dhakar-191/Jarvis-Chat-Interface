@@ -57,6 +57,12 @@ export class Jarvis implements INodeType {
 						action: 'Ask for approval',
 					},
 					{
+						name: 'Ask a Question',
+						value: 'askQuestion',
+						description: 'Pause and ask the user to type an answer',
+						action: 'Ask a question',
+					},
+					{
 						name: 'Send Notification',
 						value: 'notify',
 						description: 'Post a chat message, even with nothing in flight',
@@ -128,6 +134,25 @@ export class Jarvis implements INodeType {
 				displayOptions: { show: { operation: ['askApproval'] } },
 			},
 			{
+				displayName: 'Question',
+				name: 'content',
+				type: 'string',
+				typeOptions: { rows: 2 },
+				default: '',
+				required: true,
+				placeholder: 'Which repository should I open the PR against?',
+				displayOptions: { show: { operation: ['askQuestion'] } },
+			},
+			{
+				displayName: 'Placeholder',
+				name: 'placeholder',
+				type: 'string',
+				default: '',
+				placeholder: 'owner/repo',
+				description: 'Hint text shown in the answer box',
+				displayOptions: { show: { operation: ['askQuestion'] } },
+			},
+			{
 				displayName: 'Choices',
 				name: 'choices',
 				type: 'fixedCollection',
@@ -169,7 +194,7 @@ export class Jarvis implements INodeType {
 				default: true,
 				description:
 					'Whether to give up after a while. Without this the execution stays parked indefinitely.',
-				displayOptions: { show: { operation: ['askApproval'] } },
+				displayOptions: { show: { operation: ['askApproval', 'askQuestion'] } },
 			},
 			{
 				displayName: 'Wait For',
@@ -177,7 +202,7 @@ export class Jarvis implements INodeType {
 				type: 'number',
 				default: 1,
 				typeOptions: { minValue: 1 },
-				displayOptions: { show: { operation: ['askApproval'], limitWaitTime: [true] } },
+				displayOptions: { show: { operation: ['askApproval', 'askQuestion'], limitWaitTime: [true] } },
 			},
 			{
 				displayName: 'Unit',
@@ -189,7 +214,7 @@ export class Jarvis implements INodeType {
 					{ name: 'Hours', value: 'hours' },
 					{ name: 'Days', value: 'days' },
 				],
-				displayOptions: { show: { operation: ['askApproval'], limitWaitTime: [true] } },
+				displayOptions: { show: { operation: ['askApproval', 'askQuestion'], limitWaitTime: [true] } },
 			},
 		],
 	};
@@ -239,11 +264,12 @@ export class Jarvis implements INodeType {
 			return sessionId;
 		};
 
-		// ---- approval: push the prompt, then park the execution --------------
-		if (operation === 'askApproval') {
+		// ---- approval or question: push the prompt, then park the execution --
+		if (operation === 'askApproval' || operation === 'askQuestion') {
+			const asksForText = operation === 'askQuestion';
 			const sessionId = requireSession(this.getNodeParameter('sessionId', 0), 0);
 			const content = this.getNodeParameter('content', 0) as string;
-			const rows = this.getNodeParameter('choices.choice', 0, []) as ChoiceRow[];
+			const rows = asksForText ? [] : (this.getNodeParameter('choices.choice', 0, []) as ChoiceRow[]);
 
 			const choices = rows
 				.filter((row) => row.value || row.label)
@@ -262,7 +288,12 @@ export class Jarvis implements INodeType {
 					event: 'approval.request',
 					resumeUrl,
 					content,
-					data: choices.length ? { choices } : {},
+					data: asksForText
+						? {
+								inputType: 'text',
+								placeholder: this.getNodeParameter('placeholder', 0, '') as string,
+							}
+						: { inputType: 'choice', ...(choices.length ? { choices } : {}) },
 				},
 				json: true,
 			});

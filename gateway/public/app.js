@@ -186,7 +186,9 @@ function renderApproval(message) {
 
   const label = document.createElement('div');
   label.className = 'approval-label';
-  label.textContent = message.state === 'open' ? 'Needs your approval' : 'Approval';
+  label.textContent = message.inputType === 'text'
+    ? (message.state === 'open' ? 'Jarvis needs an answer' : 'Question')
+    : (message.state === 'open' ? 'Needs your approval' : 'Approval');
   card.append(label);
 
   const text = document.createElement('div');
@@ -194,7 +196,31 @@ function renderApproval(message) {
   text.textContent = message.content;
   card.append(text);
 
-  if (message.state === 'open') {
+  if (message.state === 'open' && message.inputType === 'text') {
+    // A question: collect free text, with its own field so it is unambiguous
+    // which prompt an answer belongs to.
+    const form = document.createElement('form');
+    form.className = 'approval-answer';
+
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.placeholder = message.placeholder || 'Your answer…';
+    field.autocomplete = 'off';
+    form.append(field);
+
+    const send = document.createElement('button');
+    send.type = 'submit';
+    send.className = 'approval-btn primary';
+    send.textContent = 'Send';
+    form.append(send);
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const answer = field.value.trim();
+      if (answer) respondToApproval(message, null, answer);
+    });
+    card.append(form);
+  } else if (message.state === 'open') {
     const actions = document.createElement('div');
     actions.className = 'approval-actions';
     for (const choice of message.choices) {
@@ -209,10 +235,14 @@ function renderApproval(message) {
   } else {
     const outcome = document.createElement('div');
     outcome.className = 'approval-outcome';
-    const chosen = message.choices.find((c) => c.value === message.choice);
-    outcome.textContent = message.state === 'expired'
-      ? 'Expired without an answer'
-      : `You chose: ${chosen ? chosen.label || chosen.value : message.choice}`;
+    if (message.state === 'expired') {
+      outcome.textContent = 'Expired without an answer';
+    } else if (message.inputType === 'text') {
+      outcome.textContent = `You answered: ${message.answer || ''}`;
+    } else {
+      const chosen = (message.choices || []).find((c) => c.value === message.choice);
+      outcome.textContent = `You chose: ${chosen ? chosen.label || chosen.value : message.choice}`;
+    }
     card.append(outcome);
   }
 
@@ -220,22 +250,28 @@ function renderApproval(message) {
   return row;
 }
 
-function respondToApproval(message, choice) {
+function respondToApproval(message, choice, text) {
   if (message.state !== 'open') return;
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
     systemNote('Not connected — could not send your answer.');
     return;
   }
   message.state = 'answered';
-  message.choice = choice;
+  message.choice = choice || 'answered';
+  if (text) message.answer = text;
   saveTranscript();
   render();
+
+  const data = { approvalId: message.approvalId };
+  if (choice) data.choice = choice;
+  if (text) data.text = text;
+
   state.ws.send(JSON.stringify({
     id: `evt_${uuid()}`,
     type: 'event',
     event: 'approval.respond',
     sessionId: state.sessionId,
-    data: { approvalId: message.approvalId, choice },
+    data,
   }));
 }
 
@@ -436,6 +472,8 @@ function handleEvent(event) {
         role: 'approval',
         approvalId: event.data.approvalId,
         content: event.data.content || 'Jarvis needs your approval to continue.',
+        inputType: event.data.inputType === 'text' ? 'text' : 'choice',
+        placeholder: event.data.placeholder || '',
         choices: Array.isArray(event.data.choices) && event.data.choices.length
           ? event.data.choices
           : [{ value: 'approve', label: 'Approve' }, { value: 'reject', label: 'Reject' }],
@@ -450,6 +488,7 @@ function handleEvent(event) {
       if (approval) {
         approval.state = 'answered';
         approval.choice = event.data.choice;
+        if (event.data.answer) approval.answer = event.data.answer;
         saveTranscript();
         render();
       }

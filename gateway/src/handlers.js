@@ -206,10 +206,19 @@ async function startAsyncExecution(ctx, connection, { payload, messageId, useTes
 async function handleApprovalRespond(ctx, connection, event) {
   const { config, approvals, registry } = ctx;
   const approvalId = event.data.approvalId ? String(event.data.approvalId) : '';
-  const choice = typeof event.data.choice === 'string' ? event.data.choice : '';
+  const choice = typeof event.data.choice === 'string' ? event.data.choice.trim() : '';
+  // A question is answered with free text; a decision with a choice.
+  const answer = typeof event.data.text === 'string' ? event.data.text.trim() : '';
 
-  if (!approvalId || !choice) {
-    return sendError(connection, ERROR_CODES.INVALID_MESSAGE, 'approval.respond requires data.approvalId and data.choice');
+  if (!approvalId || (!choice && !answer)) {
+    return sendError(
+      connection,
+      ERROR_CODES.INVALID_MESSAGE,
+      'approval.respond requires data.approvalId and either data.choice or data.text',
+    );
+  }
+  if (answer.length > protocol.MAX_CONTENT_CHARS) {
+    return sendError(connection, ERROR_CODES.INVALID_MESSAGE, 'data.text is too long');
   }
 
   const pending = approvals.get(approvalId);
@@ -227,8 +236,10 @@ async function handleApprovalRespond(ctx, connection, event) {
 
   const body = {
     approvalId,
-    choice,
-    approved: choice === 'approve',
+    // A typed answer counts as approval: the user engaged and supplied it.
+    choice: choice || 'answered',
+    approved: choice ? choice === 'approve' : true,
+    answer: answer || null,
     comment: typeof event.data.comment === 'string' ? event.data.comment : null,
     userId: connection.userId,
     sessionId: pending.sessionId,
@@ -253,13 +264,18 @@ async function handleApprovalRespond(ctx, connection, event) {
     return sendError(connection, ERROR_CODES.APPROVAL_FAILED, 'Could not resume the workflow in n8n', { approvalId });
   }
 
-  logger.info('approval resumed', { approvalId, choice, sessionId: pending.sessionId });
+  logger.info('approval resumed', {
+    approvalId,
+    choice: body.choice,
+    answered: Boolean(answer),
+    sessionId: pending.sessionId,
+  });
   // Tell every device in the session, so a second phone stops showing buttons.
   registry.deliver(
     { sessionId: pending.sessionId },
     protocol.makeEvent('approval.resolved', {
       sessionId: pending.sessionId,
-      data: { approvalId, choice, by: connection.userId },
+      data: { approvalId, choice: body.choice, answer: body.answer, by: connection.userId },
     }),
   );
 }

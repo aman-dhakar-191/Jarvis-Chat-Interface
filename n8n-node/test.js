@@ -57,8 +57,23 @@ check('the node declares its credential as required', () => {
 
 const operations = d.properties.find((p) => p.name === 'operation').options.map((o) => o.value);
 
-check('three operations are offered', () => {
-  assert.deepEqual(operations.sort(), ['askApproval', 'notify', 'sendProgress']);
+check('four operations are offered', () => {
+  assert.deepEqual(operations.sort(), ['askApproval', 'askQuestion', 'notify', 'sendProgress']);
+});
+
+check('both blocking operations expose the wait controls', () => {
+  for (const field of ['limitWaitTime', 'resumeAmount', 'resumeUnit']) {
+    const prop = d.properties.find((p) => p.name === field);
+    const shown = prop.displayOptions.show.operation;
+    assert.ok(shown.includes('askApproval') && shown.includes('askQuestion'), `${field} misses one`);
+  }
+});
+
+check('a question offers a placeholder, an approval offers choices', () => {
+  const placeholder = d.properties.find((p) => p.name === 'placeholder');
+  assert.deepEqual(placeholder.displayOptions.show.operation, ['askQuestion']);
+  const choices = d.properties.find((p) => p.name === 'choices');
+  assert.deepEqual(choices.displayOptions.show.operation, ['askApproval']);
 });
 
 check('every displayOptions rule names a real operation', () => {

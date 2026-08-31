@@ -31,7 +31,7 @@ connection is full-duplex, not request/response.
 | `session.leave` | — | Detaches this connection from the session. |
 | `user.message` | `{ messageId?, content, useTestWebhook? }` | `content` is required, ≤ 8000 chars. A `messageId` is generated if omitted. `useTestWebhook: true` routes just this message to n8n's `/webhook-test/` path. |
 | `connection.ping` | anything | Answered with `connection.pong`. |
-| `approval.respond` | `{ approvalId, choice, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. |
+| `approval.respond` | `{ approvalId, choice?, text?, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. Send `choice` for a decision, `text` for a question. |
 
 A client **cannot** set its own `userId`. Identity comes from the token
 presented at the handshake; anything you put in `data.userId` is ignored.
@@ -48,8 +48,8 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 | `execution.failed` | `{ messageId, code, message }` |
 | `notification` | `{ content, … }` — unprompted, no request needed |
 | `tool.started` / `tool.progress` / `tool.finished` / `execution.progress` | `{ content }` — transient status while Jarvis works |
-| `approval.request` | `{ approvalId, content, choices: [{ value, label }] }` |
-| `approval.resolved` | `{ approvalId, choice, by }` — also when another device answered |
+| `approval.request` | `{ approvalId, content, inputType: 'choice' \| 'text', choices?, placeholder? }` |
+| `approval.resolved` | `{ approvalId, choice, answer, by }` — also when another device answered |
 | `approval.expired` | `{ approvalId }` |
 | `error` | `{ code, message, messageId? }` |
 | `connection.pong` | `{ echo }` |

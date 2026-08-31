@@ -412,3 +412,20 @@ body {
   margin-top: 2px;
   accent-color: var(--accent);
 }
+
+.approval-answer { display: flex; gap: 8px; }
+.approval-answer input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 13px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  /* 16px keeps iOS Safari from zooming the page on focus */
+  font-size: 16px;
+  outline: none;
+}
+.approval-answer input:focus { border-color: var(--accent); }
+.approval-answer .approval-btn { flex: 0 0 auto; min-width: 0; }

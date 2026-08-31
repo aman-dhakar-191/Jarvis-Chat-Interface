@@ -643,3 +643,93 @@ test('an unarmed test webhook explains itself instead of a bare 404', async (t) 
   assert.equal(error.data.code, 'EXECUTION_FAILED');
   assert.match(error.data.message, /Execute workflow/);
 });
+
+test('a free-text question round-trips the typed answer to n8n', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: `${resume.origin}/webhook/x` });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+  client.send({ event: 'session.join', sessionId: 's1' });
+  await client.waitForEvent('session.joined');
+
+  await pushApproval(gateway, {
+    sessionId: 's1',
+    resumeUrl: resume.url,
+    content: 'Which repository should I open the PR against?',
+    data: { inputType: 'text', placeholder: 'owner/repo' },
+  });
+
+  const request = await client.waitForEvent('approval.request');
+  assert.equal(request.data.inputType, 'text');
+  assert.equal(request.data.placeholder, 'owner/repo');
+  // A question has no buttons.
+  assert.equal(request.data.choices, undefined);
+
+  client.send({
+    event: 'approval.respond',
+    data: { approvalId: request.data.approvalId, text: 'aman-dhakar-191/Jarvis-Chat-Interface' },
+  });
+
+  const resolved = await client.waitForEvent('approval.resolved');
+  assert.equal(resolved.data.answer, 'aman-dhakar-191/Jarvis-Chat-Interface');
+
+  assert.equal(resume.resumed.length, 1);
+  assert.equal(resume.resumed[0].answer, 'aman-dhakar-191/Jarvis-Chat-Interface');
+  assert.equal(resume.resumed[0].choice, 'answered');
+  // Supplying an answer counts as engagement, so downstream IFs on `approved` pass.
+  assert.equal(resume.resumed[0].approved, true);
+});
+
+test('a decision still carries choice and approved, with no answer', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: `${resume.origin}/webhook/x` });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+  client.send({ event: 'session.join', sessionId: 's1' });
+  await client.waitForEvent('session.joined');
+
+  await pushApproval(gateway, { sessionId: 's1', resumeUrl: resume.url, content: 'Delete the branch?' });
+  const request = await client.waitForEvent('approval.request');
+  assert.equal(request.data.inputType, 'choice');
+
+  client.send({ event: 'approval.respond', data: { approvalId: request.data.approvalId, choice: 'reject' } });
+  await client.waitForEvent('approval.resolved');
+  assert.equal(resume.resumed[0].choice, 'reject');
+  assert.equal(resume.resumed[0].approved, false);
+  assert.equal(resume.resumed[0].answer, null);
+});
+
+test('an empty response is rejected rather than resuming the workflow', async (t) => {
+  const resume = await startResumeEndpoint();
+  const gateway = await startGateway({ ...AUTH, N8N_WEBHOOK_URL: `${resume.origin}/webhook/x` });
+  t.after(async () => {
+    await gateway.stop();
+    await resume.close();
+  });
+
+  const client = await TestClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+  client.send({ event: 'session.join', sessionId: 's1' });
+  await client.waitForEvent('session.joined');
+
+  await pushApproval(gateway, { sessionId: 's1', resumeUrl: resume.url, content: 'Anything?' });
+  const request = await client.waitForEvent('approval.request');
+
+  client.send({ event: 'approval.respond', data: { approvalId: request.data.approvalId, text: '   ' } });
+  const error = await client.waitForEvent('error');
+  assert.equal(error.data.code, 'INVALID_MESSAGE');
+  assert.equal(resume.resumed.length, 0, 'the workflow must not resume on an empty answer');
+});

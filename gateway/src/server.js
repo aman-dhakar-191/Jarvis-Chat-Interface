@@ -104,13 +104,16 @@ function createServer(config) {
           }));
         },
       });
-      // A list of choices makes the client render buttons; default to yes/no.
-      if (!Array.isArray(data.choices) || data.choices.length === 0) {
+      // Two shapes of human-in-the-loop: a decision (buttons) and a question
+      // (free text). They differ only in how the client collects the answer.
+      data.inputType = data.inputType === 'text' ? 'text' : 'choice';
+      if (data.inputType === 'choice' && (!Array.isArray(data.choices) || data.choices.length === 0)) {
         data.choices = [
           { value: 'approve', label: 'Approve' },
           { value: 'reject', label: 'Reject' },
         ];
       }
+      if (data.inputType === 'text') delete data.choices;
     }
 
     const outbound = protocol.makeEvent(eventName, { sessionId: filter.sessionId || null, data });
