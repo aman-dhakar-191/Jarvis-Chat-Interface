@@ -1,5 +1,4 @@
 import {
-	NodeOperationError,
 	type IDataObject,
 	type INodeType,
 	type INodeTypeDescription,
@@ -74,19 +73,34 @@ export class JarvisTrigger implements INodeType {
 	};
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+		// Reject with a specific status and message rather than throwing. A throw
+		// here surfaces to the caller as a bare 500 "Workflow could not be
+		// started", which says nothing about what was actually wrong.
+		const reject = (status: number, error: string, hint: string): IWebhookResponseData => {
+			this.getResponseObject().status(status).json({ error, hint });
+			return { noWebhookResponse: true };
+		};
+
 		const expected = this.getNodeParameter('sharedSecret', '') as string;
 		if (expected) {
 			const headers = this.getHeaderData() as IDataObject;
-			const provided = headers['x-jarvis-secret'];
-			if (provided !== expected) {
-				throw new NodeOperationError(this.getNode(), 'Rejected: x-jarvis-secret did not match');
+			if (headers['x-jarvis-secret'] !== expected) {
+				return reject(
+					401,
+					'x-jarvis-secret did not match',
+					"Set the gateway's N8N_WEBHOOK_SECRET to the same value, or clear Shared Secret on this node.",
+				);
 			}
 		}
 
 		const body = (this.getBodyData() ?? {}) as IDataObject;
 		const normalized = normalizeChatInput(body);
 		if (!normalized.content) {
-			throw new NodeOperationError(this.getNode(), 'Rejected: the payload carried no message text');
+			return reject(
+				400,
+				'the payload carried no message text',
+				'Expected `message`, `content`, or a Telegram `message.text`.',
+			);
 		}
 
 		return { workflowData: [[{ json: normalized }]] };
