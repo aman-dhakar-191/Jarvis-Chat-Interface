@@ -232,17 +232,25 @@ function renderApproval(message) {
       actions.append(button);
     }
     card.append(actions);
-  } else {
+    } else {
     const outcome = document.createElement('div');
     outcome.className = 'approval-outcome';
-    if (message.state === 'expired') {
+
+    if (message.state === 'submitting') {
+      outcome.textContent = 'Sending your response…';
+    } else if (message.state === 'expired') {
       outcome.textContent = 'Expired without an answer';
     } else if (message.inputType === 'text') {
       outcome.textContent = `You answered: ${message.answer || ''}`;
     } else {
-      const chosen = (message.choices || []).find((c) => c.value === message.choice);
-      outcome.textContent = `You chose: ${chosen ? chosen.label || chosen.value : message.choice}`;
+      const chosen = (message.choices || []).find(
+        (c) => c.value === message.choice
+      );
+
+      outcome.textContent =
+        `You chose: ${chosen ? chosen.label || chosen.value : message.choice}`;
     }
+
     card.append(outcome);
   }
 
@@ -252,27 +260,43 @@ function renderApproval(message) {
 
 function respondToApproval(message, choice, text) {
   if (message.state !== 'open') return;
+
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
     systemNote('Not connected — could not send your answer.');
     return;
   }
-  message.state = 'answered';
+
+  message.state = 'submitting';
   message.choice = choice || 'answered';
-  if (text) message.answer = text;
+
+  if (text) {
+    message.answer = text;
+  }
+
   saveTranscript();
   render();
 
-  const data = { approvalId: message.approvalId };
-  if (choice) data.choice = choice;
-  if (text) data.text = text;
+  const data = {
+    approvalId: message.approvalId,
+  };
 
-  state.ws.send(JSON.stringify({
-    id: `evt_${uuid()}`,
-    type: 'event',
-    event: 'approval.respond',
-    sessionId: state.sessionId,
-    data,
-  }));
+  if (choice) {
+    data.choice = choice;
+  }
+
+  if (text) {
+    data.text = text;
+  }
+
+  state.ws.send(
+    JSON.stringify({
+      id: `evt_${uuid()}`,
+      type: 'event',
+      event: 'approval.respond',
+      sessionId: state.sessionId,
+      data,
+    }),
+  );
 }
 
 function findApproval(approvalId) {
@@ -483,17 +507,22 @@ function handleEvent(event) {
       break;
 
     case 'approval.resolved': {
-      // Also fires for an answer given on another device.
-      const approval = findApproval(event.data.approvalId);
-      if (approval) {
-        approval.state = 'answered';
-        approval.choice = event.data.choice;
-        if (event.data.answer) approval.answer = event.data.answer;
-        saveTranscript();
-        render();
-      }
-      break;
+  const approval = findApproval(event.data.approvalId);
+
+  if (approval) {
+    approval.state = 'answered';
+    approval.choice = event.data.choice;
+
+    if (event.data.answer) {
+      approval.answer = event.data.answer;
     }
+
+    saveTranscript();
+    render();
+  }
+
+  break;
+}
 
     case 'approval.expired': {
       const approval = findApproval(event.data.approvalId);
@@ -521,15 +550,15 @@ function handleEvent(event) {
         }
         return;
       }
-      if (code === 'APPROVAL_FAILED' && approvalId) {
-        // The resume call failed - let them try again.
-        const approval = findApproval(approvalId);
-        if (approval) {
-          approval.state = 'open';
-          saveTranscript();
-          render();
-        }
-      }
+      if (approvalId) {
+  const approval = findApproval(approvalId);
+
+  if (approval && approval.state === 'submitting') {
+    approval.state = 'open';
+    saveTranscript();
+    render();
+  }
+}
       if (messageId) settle(messageId, 'failed');
       else if (state.thinking > 0) state.thinking -= 1;
       systemNote(`${code || 'ERROR'}: ${message || 'Something went wrong.'}`);
