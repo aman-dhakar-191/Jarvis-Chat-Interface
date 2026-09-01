@@ -10,10 +10,17 @@ import {
 	type IWebhookResponseData,
 } from 'n8n-workflow';
 
-/** Shape of a choice row in the Choices fixedCollection. */
 interface ChoiceRow {
 	value: string;
 	label: string;
+}
+
+interface ApprovalOptions {
+	values?: {
+		approvalType?: 'single' | 'double';
+		approveLabel?: string;
+		disapproveLabel?: string;
+	};
 }
 
 export class Jarvis implements INodeType {
@@ -23,16 +30,50 @@ export class Jarvis implements INodeType {
 		icon: 'file:jarvis.svg',
 		group: ['output'],
 		version: 1,
+
 		subtitle: '={{$parameter["operation"]}}',
-		description: 'Send progress, notifications and approval requests to the Jarvis chat app',
-		defaults: { name: 'Jarvis' },
-		// String literals rather than the NodeConnectionType enum, which was
-		// renamed across n8n versions; the literals are accepted by both.
+
+		description:
+			'Send notifications and request human approval through the Jarvis chat app',
+
+		defaults: {
+			name: 'Jarvis',
+		},
+
+		/*
+		 * IMPORTANT:
+		 *
+		 * Keep this node as a normal `main` node.
+		 *
+		 * n8n will automatically generate:
+		 *
+		 *     jarvisHitlTool
+		 *
+		 * when it detects the `sendAndWait` operation below.
+		 *
+		 * That generated node becomes:
+		 *
+		 *     ai_tool -> Jarvis Human Review -> ai_tool
+		 */
 		inputs: ['main'] as INodeTypeDescription['inputs'],
 		outputs: ['main'] as INodeTypeDescription['outputs'],
-		credentials: [{ name: 'jarvisGatewayApi', required: true }],
-		// `restartWebhook` marks this as a resume webhook: n8n exposes it as
-		// $execution.resumeUrl while the execution is parked.
+
+		credentials: [
+			{
+				name: 'jarvisGatewayApi',
+				required: true,
+			},
+		],
+
+		/*
+		 * Resume webhook.
+		 *
+		 * n8n exposes:
+		 *
+		 *     $execution.resumeUrl
+		 *
+		 * while the execution is waiting.
+		 */
 		webhooks: [
 			{
 				name: 'default',
@@ -42,50 +83,124 @@ export class Jarvis implements INodeType {
 				restartWebhook: true,
 			},
 		],
+
 		properties: [
+			// ================================================================
+			// OPERATION
+			// ================================================================
+
 			{
 				displayName: 'Operation',
 				name: 'operation',
 				type: 'options',
 				noDataExpression: true,
+
 				default: 'sendProgress',
+
 				options: [
-					{
-						name: 'Ask for Approval',
-						value: 'askApproval',
-						description: 'Pause the workflow until the user answers in the Jarvis app',
-						action: 'Ask for approval',
-					},
-					{
-						name: 'Ask a Question',
-						value: 'askQuestion',
-						description: 'Pause and ask the user to type an answer',
-						action: 'Ask a question',
-					},
-					{
-						name: 'Send Notification',
-						value: 'notify',
-						description: 'Post a chat message, even with nothing in flight',
-						action: 'Send a notification',
-					},
 					{
 						name: 'Send Progress',
 						value: 'sendProgress',
-						description: 'Show a transient status line while Jarvis works',
+						description: 'Show a transient progress message',
 						action: 'Send progress',
+					},
+
+					{
+						name: 'Send Notification',
+						value: 'notify',
+						description: 'Send a normal Jarvis notification',
+						action: 'Send notification',
+					},
+
+					/*
+					 * IMPORTANT:
+					 *
+					 * The exact value MUST be `sendAndWait`.
+					 *
+					 * n8n detects this operation and automatically
+					 * generates the Jarvis HITL Tool variant.
+					 */
+					{
+						name: 'Send and Wait for Approval',
+						value: 'sendAndWait',
+						description:
+							'Request approval and pause the execution until the user responds',
+						action: 'Send and wait for approval',
+					},
+
+					/*
+					 * Keep your old operation if you still want to use
+					 * the Jarvis node directly in normal workflows.
+					 */
+					{
+						name: 'Ask for Approval',
+						value: 'askApproval',
+						description:
+							'Pause the workflow until the user answers in Jarvis',
+						action: 'Ask for approval',
+					},
+
+					{
+						name: 'Ask a Question',
+						value: 'askQuestion',
+						description:
+							'Pause the workflow and ask the user for text',
+						action: 'Ask a question',
 					},
 				],
 			},
+
+			// ================================================================
+			// SESSION
+			// ================================================================
+
 			{
 				displayName: 'Session ID',
 				name: 'sessionId',
 				type: 'string',
 				default: '={{ $json.sessionId }}',
 				required: true,
-				description: 'Conversation to deliver to. Every device in it receives the event.',
+				description:
+					'Jarvis conversation/session that should receive the event',
 			},
 
-			// --- send progress -------------------------------------------------
+			// ================================================================
+			// MESSAGE
+			// ================================================================
+
+			/*
+			 * IMPORTANT:
+			 *
+			 * The generated jarvisHitlTool replaces this property with
+			 * its own HITL-aware Message property.
+			 *
+			 * n8n's generated HITL version can use:
+			 *
+			 *     $tool.name
+			 *     $tool.parameters
+			 */
+			{
+				displayName: 'Message',
+				name: 'message',
+				type: 'string',
+
+				default:
+					'=The agent wants to use {{ $tool.name }}\\n\\nInput:\\n{{ JSON.stringify($tool.parameters, null, 2) }}',
+
+				required: true,
+
+				typeOptions: {
+					rows: 4,
+				},
+
+				description:
+					'Message shown to the user before the tool is executed',
+			},
+
+			// ================================================================
+			// SEND PROGRESS
+			// ================================================================
+
 			{
 				displayName: 'Status',
 				name: 'content',
@@ -93,256 +208,971 @@ export class Jarvis implements INodeType {
 				default: '',
 				required: true,
 				placeholder: 'Searching your email…',
-				description: 'Replaces the previous status line, and clears when the reply arrives',
-				displayOptions: { show: { operation: ['sendProgress'] } },
+				description: 'Progress/status message',
+
+				displayOptions: {
+					show: {
+						operation: ['sendProgress'],
+					},
+				},
 			},
+
 			{
 				displayName: 'Stage',
 				name: 'event',
 				type: 'options',
 				default: 'tool.started',
+
 				options: [
-					{ name: 'Tool Started', value: 'tool.started' },
-					{ name: 'Tool Progress', value: 'tool.progress' },
-					{ name: 'Tool Finished', value: 'tool.finished' },
-					{ name: 'Execution Progress', value: 'execution.progress' },
+					{
+						name: 'Tool Started',
+						value: 'tool.started',
+					},
+					{
+						name: 'Tool Progress',
+						value: 'tool.progress',
+					},
+					{
+						name: 'Tool Finished',
+						value: 'tool.finished',
+					},
+					{
+						name: 'Execution Progress',
+						value: 'execution.progress',
+					},
 				],
-				displayOptions: { show: { operation: ['sendProgress'] } },
+
+				displayOptions: {
+					show: {
+						operation: ['sendProgress'],
+					},
+				},
 			},
 
-			// --- notify --------------------------------------------------------
+			// ================================================================
+			// NOTIFICATION
+			// ================================================================
+
 			{
 				displayName: 'Message',
-				name: 'content',
+				name: 'notifyContent',
 				type: 'string',
-				typeOptions: { rows: 3 },
+				typeOptions: {
+					rows: 3,
+				},
 				default: '',
 				required: true,
-				description: 'Posted as a chat bubble. Works with no message in flight.',
-				displayOptions: { show: { operation: ['notify'] } },
+
+				displayOptions: {
+					show: {
+						operation: ['notify'],
+					},
+				},
 			},
 
-			// --- ask for approval ----------------------------------------------
+			// ================================================================
+			// OLD ASK APPROVAL
+			// ================================================================
+
 			{
 				displayName: 'Question',
 				name: 'content',
 				type: 'string',
-				typeOptions: { rows: 2 },
+
+				typeOptions: {
+					rows: 2,
+				},
+
 				default: '',
-				required: true,
-				placeholder: 'Send the follow-up email to the client?',
-				displayOptions: { show: { operation: ['askApproval'] } },
+
+				placeholder:
+					'Send the follow-up email to the client?',
+
+				displayOptions: {
+					show: {
+						operation: ['askApproval'],
+					},
+				},
 			},
-			{
-				displayName: 'Question',
-				name: 'content',
-				type: 'string',
-				typeOptions: { rows: 2 },
-				default: '',
-				required: true,
-				placeholder: 'Which repository should I open the PR against?',
-				displayOptions: { show: { operation: ['askQuestion'] } },
-			},
-			{
-				displayName: 'Placeholder',
-				name: 'placeholder',
-				type: 'string',
-				default: '',
-				placeholder: 'owner/repo',
-				description: 'Hint text shown in the answer box',
-				displayOptions: { show: { operation: ['askQuestion'] } },
-			},
+
+			// ================================================================
+			// OLD CUSTOM CHOICES
+			// ================================================================
+
 			{
 				displayName: 'Choices',
 				name: 'choices',
 				type: 'fixedCollection',
-				typeOptions: { multipleValues: true, sortable: true },
+
+				typeOptions: {
+					multipleValues: true,
+					sortable: true,
+				},
+
 				default: {},
+
 				placeholder: 'Add Choice',
-				description: 'Buttons shown in the app. Leave empty for Approve and Reject.',
-				displayOptions: { show: { operation: ['askApproval'] } },
+
+				description:
+					'Custom approval buttons. Leave empty for Approve and Reject.',
+
+				displayOptions: {
+					show: {
+						operation: ['askApproval'],
+					},
+				},
+
 				options: [
 					{
 						name: 'choice',
 						displayName: 'Choice',
+
 						values: [
 							{
 								displayName: 'Label',
 								name: 'label',
 								type: 'string',
 								default: '',
-								placeholder: 'Send it',
-								description: 'Text on the button',
+								placeholder: 'Approve',
 							},
+
 							{
 								displayName: 'Value',
 								name: 'value',
 								type: 'string',
 								default: '',
 								placeholder: 'approve',
-								description:
-									'Returned as `choice`. Use `approve` to have the button highlighted and set `approved` to true.',
 							},
 						],
 					},
 				],
 			},
+
+			// ================================================================
+			// QUESTION
+			// ================================================================
+
+			{
+				displayName: 'Question',
+				name: 'question',
+				type: 'string',
+
+				typeOptions: {
+					rows: 2,
+				},
+
+				default: '',
+
+				placeholder:
+					'Which repository should I open the PR against?',
+
+				displayOptions: {
+					show: {
+						operation: ['askQuestion'],
+					},
+				},
+			},
+
+			{
+				displayName: 'Placeholder',
+				name: 'placeholder',
+				type: 'string',
+				default: '',
+				placeholder: 'owner/repo',
+
+				displayOptions: {
+					show: {
+						operation: ['askQuestion'],
+					},
+				},
+			},
+
+			// ================================================================
+			// N8N HITL APPROVAL OPTIONS
+			// ================================================================
+
+			/*
+			 * n8n's HITL generator looks specifically for a property
+			 * called `approvalOptions`.
+			 *
+			 * It will preserve this property on jarvisHitlTool.
+			 */
+			{
+				displayName: 'Approval Options',
+				name: 'approvalOptions',
+				type: 'fixedCollection',
+
+				placeholder: 'Add option',
+
+				default: {},
+
+				options: [
+					{
+						displayName: 'Values',
+						name: 'values',
+
+						values: [
+							{
+								displayName: 'Type of Approval',
+								name: 'approvalType',
+								type: 'options',
+
+								default: 'double',
+
+								options: [
+									{
+										name: 'Approve Only',
+										value: 'single',
+									},
+									{
+										name: 'Approve and Disapprove',
+										value: 'double',
+									},
+								],
+							},
+
+							{
+								displayName: 'Approve Button Label',
+								name: 'approveLabel',
+								type: 'string',
+								default: 'Approve',
+
+								displayOptions: {
+									show: {
+										approvalType: ['single', 'double'],
+									},
+								},
+							},
+
+							{
+								displayName: 'Disapprove Button Label',
+								name: 'disapproveLabel',
+								type: 'string',
+								default: 'Reject',
+
+								displayOptions: {
+									show: {
+										approvalType: ['double'],
+									},
+								},
+							},
+						],
+					},
+				],
+
+				displayOptions: {
+					show: {
+						operation: ['sendAndWait'],
+					},
+				},
+			},
+
+			// ================================================================
+			// WAIT SETTINGS
+			// ================================================================
+
 			{
 				displayName: 'Limit Wait Time',
 				name: 'limitWaitTime',
 				type: 'boolean',
+
 				default: true,
+
 				description:
-					'Whether to give up after a while. Without this the execution stays parked indefinitely.',
-				displayOptions: { show: { operation: ['askApproval', 'askQuestion'] } },
+					'Whether to give up after a specified amount of time',
+
+				displayOptions: {
+					show: {
+						operation: ['sendAndWait', 'askApproval', 'askQuestion'],
+					},
+				},
 			},
+
 			{
 				displayName: 'Wait For',
 				name: 'resumeAmount',
 				type: 'number',
+
 				default: 1,
-				typeOptions: { minValue: 1 },
-				displayOptions: { show: { operation: ['askApproval', 'askQuestion'], limitWaitTime: [true] } },
+
+				typeOptions: {
+					minValue: 1,
+				},
+
+				displayOptions: {
+					show: {
+						operation: [
+							'sendAndWait',
+							'askApproval',
+							'askQuestion',
+						],
+
+						limitWaitTime: [true],
+					},
+				},
 			},
+
 			{
 				displayName: 'Unit',
 				name: 'resumeUnit',
 				type: 'options',
+
 				default: 'hours',
+
 				options: [
-					{ name: 'Minutes', value: 'minutes' },
-					{ name: 'Hours', value: 'hours' },
-					{ name: 'Days', value: 'days' },
+					{
+						name: 'Minutes',
+						value: 'minutes',
+					},
+					{
+						name: 'Hours',
+						value: 'hours',
+					},
+					{
+						name: 'Days',
+						value: 'days',
+					},
 				],
-				displayOptions: { show: { operation: ['askApproval', 'askQuestion'], limitWaitTime: [true] } },
+
+				displayOptions: {
+					show: {
+						operation: [
+							'sendAndWait',
+							'askApproval',
+							'askQuestion',
+						],
+
+						limitWaitTime: [true],
+					},
+				},
 			},
 		],
 	};
 
-	/**
-	 * The gateway POSTs the user's decision here, which resumes the parked
-	 * execution. Only one output is declared on purpose: n8n fires only the
-	 * first output of a webhook-wait node, so branching is done downstream with
-	 * an IF on `approved` (see n8n-io/n8n#12823).
-	 */
-	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+	// ======================================================================
+	// RESUME WEBHOOK
+	// ======================================================================
+
+	async webhook(
+		this: IWebhookFunctions,
+	): Promise<IWebhookResponseData> {
 		const body = (this.getBodyData() ?? {}) as IDataObject;
+
+		/*
+		 * The Jarvis Gateway posts something like:
+		 *
+		 * {
+		 *   "approved": true,
+		 *   "choice": "approve"
+		 * }
+		 *
+		 * This becomes the result of the waiting node.
+		 */
 		return {
-			webhookResponse: { ok: true },
-			workflowData: [[{ json: body }]],
+			webhookResponse: {
+				ok: true,
+			},
+
+			workflowData: [
+				[
+					{
+						json: body,
+					},
+				],
+			],
 		};
 	}
 
-	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-		const items = this.getInputData();
-		const operation = this.getNodeParameter('operation', 0) as string;
+	// ======================================================================
+	// EXECUTE
+	// ======================================================================
 
-		const credentials = await this.getCredentials('jarvisGatewayApi');
-		const baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
+	async execute(
+		this: IExecuteFunctions,
+	): Promise<INodeExecutionData[][]> {
+		const items = this.getInputData();
+
+		const operation = this.getNodeParameter(
+			'operation',
+			0,
+		) as string;
+
+		// ------------------------------------------------------------------
+		// Gateway credentials
+		// ------------------------------------------------------------------
+
+		const credentials = await this.getCredentials(
+			'jarvisGatewayApi',
+		);
+
+		const baseUrl = String(
+			credentials.baseUrl ?? '',
+		).replace(/\/+$/, '');
+
 		if (!baseUrl) {
-			throw new NodeOperationError(this.getNode(), 'The Jarvis Gateway credential has no URL');
+			throw new NodeOperationError(
+				this.getNode(),
+				'The Jarvis Gateway credential has no URL',
+			);
 		}
+
 		const pushUrl = `${baseUrl}/api/push`;
 
-		// An empty sessionId reaches the gateway as a bare 400, which says nothing
-		// about the cause. The usual reason is reading $json.sessionId at a point
-		// where $json is something else - a data-table row exposes session_id, not
-		// sessionId - so name that rather than let the HTTP error surface.
-		const requireSession = (value: unknown, itemIndex: number): string => {
-			const sessionId = typeof value === 'string' ? value.trim() : '';
+		// ------------------------------------------------------------------
+		// Session helper
+		// ------------------------------------------------------------------
+
+		const requireSession = (
+			value: unknown,
+			itemIndex: number,
+		): string => {
+			const sessionId =
+				typeof value === 'string'
+					? value.trim()
+					: '';
+
 			if (!sessionId) {
 				throw new NodeOperationError(
 					this.getNode(),
-					'Session ID is empty, so the gateway cannot tell which conversation to deliver to',
+
+					'Session ID is empty, so the gateway cannot determine which Jarvis conversation should receive the event',
+
 					{
 						itemIndex,
+
 						description:
-							"The expression resolved to nothing. Inside a sub-workflow read it from the trigger, e.g. {{ $('When Executed by Main Agent').first().json.sessionId }}. Note a data-table row exposes `session_id`, not `sessionId`.",
+							'Make sure the Jarvis sessionId is available. For sub-workflows use the sessionId supplied by the parent agent.',
 					},
 				);
 			}
+
 			return sessionId;
 		};
 
-		// ---- approval or question: push the prompt, then park the execution --
-		if (operation === 'askApproval' || operation === 'askQuestion') {
-			const asksForText = operation === 'askQuestion';
-			const sessionId = requireSession(this.getNodeParameter('sessionId', 0), 0);
-			const content = this.getNodeParameter('content', 0) as string;
-			const rows = asksForText ? [] : (this.getNodeParameter('choices.choice', 0, []) as ChoiceRow[]);
+		// ==================================================================
+		// SEND AND WAIT
+		//
+		// This is the operation that causes n8n to generate:
+		//
+		//     jarvisHitlTool
+		//
+		// ==================================================================
 
-			const choices = rows
-				.filter((row) => row.value || row.label)
-				.map((row) => ({ value: row.value || row.label, label: row.label || row.value }));
+		if (operation === 'sendAndWait') {
+			const sessionId = requireSession(
+				this.getNodeParameter('sessionId', 0),
+				0,
+			);
 
-			// The gateway stores this and never sends it to a client.
-			const resumeUrl = this.evaluateExpression('{{ $execution.resumeUrl }}', 0) as string;
-			// Lets the editor show the "waiting" tooltip, exactly as the Wait node does.
-			this.setMetadata({ resumeUrl });
+			/*
+			 * IMPORTANT:
+			 *
+			 * The generated HITL node provides this property.
+			 *
+			 * It normally contains:
+			 *
+			 * "The agent wants to use {{ $tool.name }}"
+			 *
+			 * plus the actual $tool.parameters.
+			 */
+			const message = this.getNodeParameter(
+				'message',
+				0,
+			) as string;
 
-			await this.helpers.httpRequestWithAuthentication.call(this, 'jarvisGatewayApi', {
-				method: 'POST',
-				url: pushUrl,
-				body: {
-					sessionId,
-					event: 'approval.request',
-					resumeUrl,
-					content,
-					data: asksForText
-						? {
-								inputType: 'text',
-								placeholder: this.getNodeParameter('placeholder', 0, '') as string,
-							}
-						: { inputType: 'choice', ...(choices.length ? { choices } : {}) },
+			// --------------------------------------------------------------
+			// Approval options
+			// --------------------------------------------------------------
+
+			const approvalOptions =
+				this.getNodeParameter(
+					'approvalOptions',
+					0,
+					{},
+				) as ApprovalOptions;
+
+			const approvalValues =
+				approvalOptions?.values ?? {};
+
+			const approvalType =
+				approvalValues.approvalType ?? 'double';
+
+			const approveLabel =
+				approvalValues.approveLabel ??
+				'Approve';
+
+			const disapproveLabel =
+				approvalValues.disapproveLabel ??
+				'Reject';
+
+			const choices = [
+				{
+					value: 'approve',
+					label: approveLabel,
 				},
-				json: true,
+
+				...(approvalType === 'double'
+					? [
+							{
+								value: 'reject',
+								label: disapproveLabel,
+							},
+						]
+					: []),
+			];
+
+			// --------------------------------------------------------------
+			// Resume URL
+			// --------------------------------------------------------------
+
+			const resumeUrl =
+				this.evaluateExpression(
+					'{{ $execution.resumeUrl }}',
+					0,
+				) as string;
+
+			/*
+			 * Makes the n8n editor show the node as waiting.
+			 */
+			this.setMetadata({
+				resumeUrl,
 			});
 
+			// --------------------------------------------------------------
+			// Send approval request to Jarvis
+			// --------------------------------------------------------------
+
+			await this.helpers.httpRequestWithAuthentication.call(
+				this,
+				'jarvisGatewayApi',
+				{
+					method: 'POST',
+
+					url: pushUrl,
+
+					body: {
+						sessionId,
+
+						event: 'approval.request',
+
+						resumeUrl,
+
+						content: message,
+
+						data: {
+							inputType: 'choice',
+
+							choices,
+
+							/*
+							 * Useful for your Jarvis UI.
+							 */
+							approvalType,
+
+							toolName: this.evaluateExpression(
+								'{{ $tool.name }}',
+								0,
+							),
+
+							toolParameters:
+								this.evaluateExpression(
+									'{{ JSON.stringify($tool.parameters) }}',
+									0,
+								),
+						},
+					},
+
+					json: true,
+				},
+			);
+
+			// --------------------------------------------------------------
+			// Wait
+			// --------------------------------------------------------------
+
 			let waitTill = WAIT_INDEFINITELY;
-			if (this.getNodeParameter('limitWaitTime', 0, true) as boolean) {
-				const amount = this.getNodeParameter('resumeAmount', 0, 1) as number;
-				const unit = this.getNodeParameter('resumeUnit', 0, 'hours') as string;
-				const perUnit: Record<string, number> = {
+
+			if (
+				this.getNodeParameter(
+					'limitWaitTime',
+					0,
+					true,
+				) as boolean
+			) {
+				const amount =
+					this.getNodeParameter(
+						'resumeAmount',
+						0,
+						1,
+					) as number;
+
+				const unit =
+					this.getNodeParameter(
+						'resumeUnit',
+						0,
+						'hours',
+					) as string;
+
+				const perUnit: Record<
+					string,
+					number
+				> = {
 					minutes: 60_000,
 					hours: 3_600_000,
 					days: 86_400_000,
 				};
-				waitTill = new Date(Date.now() + amount * (perUnit[unit] ?? perUnit.hours));
+
+				waitTill = new Date(
+					Date.now() +
+						amount *
+							(perUnit[unit] ??
+								perUnit.hours),
+				);
 			}
 
 			await this.putExecutionToWait(waitTill);
-			// Resuming re-enters through webhook(), whose output replaces this.
+
+			/*
+			 * When the Jarvis Gateway calls resumeUrl,
+			 * n8n resumes through webhook().
+			 */
 			return [items];
 		}
 
-		// ---- fire-and-forget pushes, one per item ----------------------------
+		// ==================================================================
+		// OLD ASK APPROVAL
+		// ==================================================================
+
+		if (operation === 'askApproval') {
+			const sessionId = requireSession(
+				this.getNodeParameter('sessionId', 0),
+				0,
+			);
+
+			const content =
+				this.getNodeParameter(
+					'content',
+					0,
+				) as string;
+
+			const rows =
+				(this.getNodeParameter(
+					'choices.choice',
+					0,
+					[],
+				) as ChoiceRow[]) ?? [];
+
+			const choices = rows
+				.filter(
+					(row) =>
+						row.value ||
+						row.label,
+				)
+				.map((row) => ({
+					value:
+						row.value ||
+						row.label,
+
+					label:
+						row.label ||
+						row.value,
+				}));
+
+			const finalChoices =
+				choices.length
+					? choices
+					: [
+							{
+								value: 'approve',
+								label: 'Approve',
+							},
+							{
+								value: 'reject',
+								label: 'Reject',
+							},
+						];
+
+			const resumeUrl =
+				this.evaluateExpression(
+					'{{ $execution.resumeUrl }}',
+					0,
+				) as string;
+
+			this.setMetadata({
+				resumeUrl,
+			});
+
+			await this.helpers.httpRequestWithAuthentication.call(
+				this,
+				'jarvisGatewayApi',
+				{
+					method: 'POST',
+
+					url: pushUrl,
+
+					body: {
+						sessionId,
+
+						event: 'approval.request',
+
+						resumeUrl,
+
+						content,
+
+						data: {
+							inputType: 'choice',
+							choices: finalChoices,
+						},
+					},
+
+					json: true,
+				},
+			);
+
+			let waitTill = WAIT_INDEFINITELY;
+
+			if (
+				this.getNodeParameter(
+					'limitWaitTime',
+					0,
+					true,
+				) as boolean
+			) {
+				const amount =
+					this.getNodeParameter(
+						'resumeAmount',
+						0,
+						1,
+					) as number;
+
+				const unit =
+					this.getNodeParameter(
+						'resumeUnit',
+						0,
+						'hours',
+					) as string;
+
+				const perUnit: Record<
+					string,
+					number
+				> = {
+					minutes: 60_000,
+					hours: 3_600_000,
+					days: 86_400_000,
+				};
+
+				waitTill = new Date(
+					Date.now() +
+						amount *
+							(perUnit[unit] ??
+								perUnit.hours),
+				);
+			}
+
+			await this.putExecutionToWait(
+				waitTill,
+			);
+
+			return [items];
+		}
+
+		// ==================================================================
+		// ASK QUESTION
+		// ==================================================================
+
+		if (operation === 'askQuestion') {
+			const sessionId = requireSession(
+				this.getNodeParameter('sessionId', 0),
+				0,
+			);
+
+			const content =
+				this.getNodeParameter(
+					'question',
+					0,
+				) as string;
+
+			const placeholder =
+				this.getNodeParameter(
+					'placeholder',
+					0,
+					'',
+				) as string;
+
+			const resumeUrl =
+				this.evaluateExpression(
+					'{{ $execution.resumeUrl }}',
+					0,
+				) as string;
+
+			this.setMetadata({
+				resumeUrl,
+			});
+
+			await this.helpers.httpRequestWithAuthentication.call(
+				this,
+				'jarvisGatewayApi',
+				{
+					method: 'POST',
+
+					url: pushUrl,
+
+					body: {
+						sessionId,
+
+						event: 'approval.request',
+
+						resumeUrl,
+
+						content,
+
+						data: {
+							inputType: 'text',
+							placeholder,
+						},
+					},
+
+					json: true,
+				},
+			);
+
+			let waitTill = WAIT_INDEFINITELY;
+
+			if (
+				this.getNodeParameter(
+					'limitWaitTime',
+					0,
+					true,
+				) as boolean
+			) {
+				const amount =
+					this.getNodeParameter(
+						'resumeAmount',
+						0,
+						1,
+					) as number;
+
+				const unit =
+					this.getNodeParameter(
+						'resumeUnit',
+						0,
+						'hours',
+					) as string;
+
+				const perUnit: Record<
+					string,
+					number
+				> = {
+					minutes: 60_000,
+					hours: 3_600_000,
+					days: 86_400_000,
+				};
+
+				waitTill = new Date(
+					Date.now() +
+						amount *
+							(perUnit[unit] ??
+								perUnit.hours),
+				);
+			}
+
+			await this.putExecutionToWait(
+				waitTill,
+			);
+
+			return [items];
+		}
+
+		// ==================================================================
+		// NORMAL NOTIFICATION / PROGRESS
+		// ==================================================================
+
 		const results: INodeExecutionData[] = [];
-		for (let i = 0; i < items.length; i++) {
-			const sessionId = requireSession(this.getNodeParameter('sessionId', i), i);
-			const content = this.getNodeParameter('content', i) as string;
-			const event =
-				operation === 'notify'
-					? 'notification'
-					: (this.getNodeParameter('event', i, 'tool.started') as string);
+
+		for (
+			let i = 0;
+			i < items.length;
+			i++
+		) {
+			const sessionId = requireSession(
+				this.getNodeParameter(
+					'sessionId',
+					i,
+				),
+				i,
+			);
+
+			let content = '';
+
+			let event = 'notification';
+
+			if (operation === 'notify') {
+				content =
+					this.getNodeParameter(
+						'notifyContent',
+						i,
+					) as string;
+
+				event = 'notification';
+			} else {
+				content =
+					this.getNodeParameter(
+						'content',
+						i,
+					) as string;
+
+				event =
+					this.getNodeParameter(
+						'event',
+						i,
+						'tool.started',
+					) as string;
+			}
 
 			try {
-				const response = (await this.helpers.httpRequestWithAuthentication.call(
-					this,
-					'jarvisGatewayApi',
-					{
-						method: 'POST',
-						url: pushUrl,
-						body: { sessionId, event, content },
-						json: true,
+				const response =
+					(await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'jarvisGatewayApi',
+						{
+							method: 'POST',
+
+							url: pushUrl,
+
+							body: {
+								sessionId,
+								event,
+								content,
+							},
+
+							json: true,
+						},
+					)) as IDataObject;
+
+				results.push({
+					json: response,
+
+					pairedItem: {
+						item: i,
 					},
-				)) as IDataObject;
-				results.push({ json: response, pairedItem: { item: i } });
+				});
 			} catch (error) {
-				// A status line that fails to deliver must never break the run.
 				if (this.continueOnFail()) {
-					results.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
+					results.push({
+						json: {
+							error: (
+								error as Error
+							).message,
+						},
+
+						pairedItem: {
+							item: i,
+						},
+					});
+
 					continue;
 				}
+
 				throw error;
 			}
 		}
