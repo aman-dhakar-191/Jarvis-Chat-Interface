@@ -12,7 +12,7 @@ export class JarvisTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Jarvis Trigger',
 		name: 'jarvisTrigger',
-		icon: 'file:../jarvis.svg',
+		icon: 'file:jarvis.svg',
 		group: ['trigger'],
 		version: 1,
 		description:

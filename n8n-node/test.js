@@ -8,12 +8,9 @@ const path = require('node:path');
 
 const pkg = require('./package.json');
 const { JarvisGatewayApi } = require('./dist/credentials/JarvisGatewayApi.credentials.js');
-const { JarvisTrigger } = require('./dist/nodes/Jarvis/Trigger/JarvisTrigger.node.js');
-const { normalizeChatInput } = require('./dist/nodes/Jarvis/Trigger/normalize.js');
-const { JarvisNotification } = require('./dist/nodes/Jarvis/Notification/JarvisNotification.node.js');
-const { JarvisProgress } = require('./dist/nodes/Jarvis/Progress/JarvisProgress.node.js');
-const { JarvisHumanReview } = require('./dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js');
 const { Jarvis } = require('./dist/nodes/Jarvis/Jarvis.node.js');
+const { JarvisTrigger } = require('./dist/nodes/Jarvis/JarvisTrigger.node.js');
+const { normalizeChatInput } = require('./dist/nodes/Jarvis/normalize.js');
 
 let failures = 0;
 const check = (label, fn) => {
@@ -28,8 +25,8 @@ const checkAsync = async (label, fn) => {
   catch (err) { failures++; console.log('FAIL ', label, '->', err.message); }
 };
 
-// Every node is loaded from its own dist directory, so a `file:../jarvis.svg`
-// icon has to resolve the way n8n resolves it: relative to that directory.
+// An icon has to resolve the way n8n resolves it: relative to the directory
+// the node was loaded from.
 const distDirOf = (nodeName) => {
   const file = nodeName[0].toUpperCase() + nodeName.slice(1);
   const rel = pkg.n8n.nodes.find((p) => path.basename(p) === `${file}.node.js`);
@@ -47,63 +44,83 @@ check('every path in the n8n manifest exists in dist', () => {
   }
 });
 
-// ---- the four nodes the picker should expose ----------------------------
+// ---- the two node types the package registers ---------------------------
 
 const descriptions = {
-  jarvisTrigger: new JarvisTrigger().description,
-  jarvisNotification: new JarvisNotification().description,
-  jarvisProgress: new JarvisProgress().description,
-  jarvisHumanReview: new JarvisHumanReview().description,
   jarvis: new Jarvis().description,
+  jarvisTrigger: new JarvisTrigger().description,
 };
 
+const d = descriptions.jarvis;
+const operations = d.properties.find((p) => p.name === 'operation').options.map((o) => o.value);
+
 check('every node description has the fields n8n requires', () => {
-  for (const [name, d] of Object.entries(descriptions)) {
+  for (const [name, desc] of Object.entries(descriptions)) {
     for (const key of ['displayName', 'name', 'group', 'version', 'defaults', 'inputs', 'outputs', 'properties']) {
-      assert.ok(d[key] !== undefined, `${name} is missing ${key}`);
+      assert.ok(desc[key] !== undefined, `${name} is missing ${key}`);
     }
-    assert.equal(d.name, name);
+    assert.equal(desc.name, name);
   }
 });
 
 check('the icon every node references was copied into dist', () => {
-  for (const [name, d] of Object.entries(descriptions)) {
-    const rel = d.icon.replace(/^file:/, '');
+  for (const [name, desc] of Object.entries(descriptions)) {
+    const rel = desc.icon.replace(/^file:/, '');
     assert.ok(
       fs.existsSync(path.resolve(distDirOf(name), rel)),
-      `${name} points at a missing icon ${d.icon}`,
+      `${name} points at a missing icon ${desc.icon}`,
     );
   }
 });
 
-check('the action nodes are main nodes bound to the gateway credential', () => {
-  for (const name of ['jarvisNotification', 'jarvisProgress', 'jarvisHumanReview']) {
-    const d = descriptions[name];
-    assert.deepEqual(d.inputs, ['main'], `${name} inputs`);
-    assert.deepEqual(d.outputs, ['main'], `${name} outputs`);
-    assert.deepEqual(d.credentials, [{ name: 'jarvisGatewayApi', required: true }], `${name} credentials`);
+check('the action node is a main node bound to the gateway credential', () => {
+  assert.deepEqual(d.inputs, ['main']);
+  assert.deepEqual(d.outputs, ['main']);
+  assert.deepEqual(d.credentials, [{ name: 'jarvisGatewayApi', required: true }]);
+  assert.equal(d.name, 'jarvis', 'renaming it would orphan every saved Jarvis node');
+  assert.notEqual(d.hidden, true, 'the action node must stay in the node creator');
+});
+
+check('the three actions are offered under one node', () => {
+  assert.deepEqual(operations, ['sendProgress', 'notify', 'sendAndWait']);
+  // `action` is what the node creator lists, which is how one node type still
+  // shows up as three separate picker entries.
+  for (const option of d.properties.find((p) => p.name === 'operation').options) {
+    assert.ok(option.action, `${option.value} has no action label`);
   }
 });
 
-check('each action node exposes exactly the parameters it needs', () => {
-  const names = (d) => d.properties.map((p) => p.name);
-  assert.deepEqual(names(descriptions.jarvisNotification), ['sessionId', 'content']);
-  assert.deepEqual(names(descriptions.jarvisProgress), ['sessionId', 'event', 'content']);
-  assert.deepEqual(names(descriptions.jarvisHumanReview), [
-    'operation', 'sessionId', 'message', 'approvalOptions',
-    'limitWaitTime', 'resumeAmount', 'resumeUnit', 'toolName', 'toolParameters',
-  ]);
+check('every displayOptions rule names a real operation', () => {
+  for (const prop of d.properties) {
+    for (const op of prop.displayOptions?.show?.operation ?? []) {
+      assert.ok(operations.includes(op), `${prop.name} shows on unknown operation "${op}"`);
+    }
+  }
 });
 
-check('notification and progress carry no operation switch', () => {
-  for (const name of ['jarvisNotification', 'jarvisProgress']) {
-    assert.equal(descriptions[name].properties.find((p) => p.name === 'operation'), undefined, name);
-    assert.equal(descriptions[name].webhooks, undefined, `${name} must not declare a webhook`);
+check('each operation can reach a Session ID and a body field', () => {
+  const bodyField = { sendProgress: 'content', notify: 'notifyContent', sendAndWait: 'message' };
+  for (const op of operations) {
+    const visible = d.properties
+      .filter((p) => {
+        const show = p.displayOptions?.show?.operation;
+        return !show || show.includes(op);
+      })
+      .map((p) => p.name);
+    assert.ok(visible.includes('sessionId'), `${op} cannot set sessionId`);
+    assert.ok(visible.includes(bodyField[op]), `${op} cannot set ${bodyField[op]}`);
+  }
+});
+
+check('the non-blocking operations do not show the wait controls', () => {
+  for (const field of ['limitWaitTime', 'resumeAmount', 'resumeUnit', 'approvalOptions']) {
+    const shown = d.properties.find((p) => p.name === field).displayOptions.show.operation;
+    assert.deepEqual(shown, ['sendAndWait'], `${field} leaks into another operation`);
   }
 });
 
 check('progress keeps the stages the Jarvis client renders', () => {
-  const stage = descriptions.jarvisProgress.properties.find((p) => p.name === 'event');
+  const stage = d.properties.find((p) => p.name === 'event');
   assert.deepEqual(stage.options.map((o) => o.value), [
     'tool.started', 'tool.progress', 'tool.finished', 'execution.progress',
   ]);
@@ -112,62 +129,55 @@ check('progress keeps the stages the Jarvis client renders', () => {
 
 // ---- human review: the HITL contract ------------------------------------
 
-const hr = descriptions.jarvisHumanReview;
-
-check('human review still declares the sendAndWait operation n8n generates its HITL tool from', () => {
-  const operation = hr.properties.find((p) => p.name === 'operation');
-  assert.deepEqual(operation.options.map((o) => o.value), ['sendAndWait']);
-  assert.equal(operation.default, 'sendAndWait');
+check('the sendAndWait value n8n generates its HITL tool from is intact', () => {
+  const { SEND_AND_WAIT_OPERATION } = require('n8n-workflow');
+  assert.equal(SEND_AND_WAIT_OPERATION, 'sendAndWait');
+  assert.ok(operations.includes(SEND_AND_WAIT_OPERATION));
 });
 
-check('human review declares the resume webhook, not a trigger webhook', () => {
-  assert.equal(hr.webhooks.length, 1, 'exactly one output/webhook, per n8n#12823');
-  const [hook] = hr.webhooks;
+check('the resume webhook is declared, and is not a trigger webhook', () => {
+  assert.equal(d.webhooks.length, 1, 'exactly one output/webhook, per n8n#12823');
+  const [hook] = d.webhooks;
   assert.equal(hook.restartWebhook, true, 'without this the gateway would start a new execution');
   assert.equal(hook.httpMethod, 'POST');
   assert.equal(hook.responseMode, 'onReceived');
   assert.equal(hook.name, 'default');
   assert.equal(hook.path, '');
-  assert.notDeepEqual(hr.group, ['trigger']);
+  assert.notDeepEqual(d.group, ['trigger']);
 });
 
-check('human review keeps the approvalOptions collection n8n carries onto the tool', () => {
-  const approval = hr.properties.find((p) => p.name === 'approvalOptions');
+check('the approvalOptions collection n8n carries onto the tool is intact', () => {
+  const approval = d.properties.find((p) => p.name === 'approvalOptions');
   assert.equal(approval.type, 'fixedCollection');
   const values = approval.options[0].values.map((v) => v.name);
   assert.deepEqual(values, ['approvalType', 'approveLabel', 'disapproveLabel']);
   assert.equal(approval.options[0].values.find((v) => v.name === 'approvalType').default, 'double');
 });
 
-check('human review exposes the wait controls behind Limit Wait Time', () => {
-  assert.equal(hr.properties.find((p) => p.name === 'limitWaitTime').default, true);
+check('Message stays ungated so the generated HITL tool can replace it', () => {
+  const message = d.properties.find((p) => p.name === 'message');
+  assert.equal(message.displayOptions, undefined, 'gating Message on operation risks hiding it on the tool');
+  assert.equal(message.required, true);
+});
+
+check('the wait controls sit behind Limit Wait Time', () => {
+  assert.equal(d.properties.find((p) => p.name === 'limitWaitTime').default, true);
   for (const field of ['resumeAmount', 'resumeUnit']) {
-    const prop = hr.properties.find((p) => p.name === field);
+    const prop = d.properties.find((p) => p.name === field);
     assert.deepEqual(prop.displayOptions.show.limitWaitTime, [true], `${field} misses the guard`);
   }
   assert.deepEqual(
-    hr.properties.find((p) => p.name === 'resumeUnit').options.map((o) => o.value),
+    d.properties.find((p) => p.name === 'resumeUnit').options.map((o) => o.value),
     ['minutes', 'hours', 'days'],
   );
 });
 
-const asyncChecks = checkAsync('human review turns the resume payload into workflow data', async () => {
+const asyncChecks = checkAsync('the resume payload becomes workflow data', async () => {
   const ctx = { getBodyData: () => ({ approvalId: 'apr_1', choice: 'approve', approved: true }) };
-  const r = await new JarvisHumanReview().webhook.call(ctx);
+  const r = await new Jarvis().webhook.call(ctx);
   assert.deepEqual(r.webhookResponse, { ok: true });
   assert.equal(r.workflowData[0][0].json.approvalId, 'apr_1');
   assert.equal(r.workflowData[0][0].json.approved, true);
-});
-
-// ---- legacy node --------------------------------------------------------
-
-check('the legacy node stays loadable so saved workflows do not orphan', () => {
-  const d = descriptions.jarvis;
-  assert.equal(d.name, 'jarvis', 'renaming it would orphan every saved Jarvis node');
-  assert.equal(d.hidden, true, 'it must not appear in the node creator any more');
-  const operations = d.properties.find((p) => p.name === 'operation').options.map((o) => o.value);
-  assert.deepEqual(operations, ['sendProgress', 'notify', 'sendAndWait']);
-  assert.equal(d.webhooks[0].restartWebhook, true);
 });
 
 // ---- credential ---------------------------------------------------------

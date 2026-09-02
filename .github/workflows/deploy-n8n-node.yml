@@ -252,13 +252,7 @@ jobs:
 
               // Verify what n8n will actually load: every path in the n8n
               // manifest, not one hard-coded node file.
-              const expected = [
-                "jarvisTrigger",
-                "jarvisNotification",
-                "jarvisProgress",
-                "jarvisHumanReview",
-                "jarvis",
-              ];
+              const expected = ["jarvis", "jarvisTrigger"];
 
               const found = [];
 
@@ -279,13 +273,19 @@ jobs:
 
               // The AI Agent only gets a Human Review tool while this
               // operation value survives on the node.
-              const hr = require(`${root}/dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js`);
+              const jarvis = require(`${root}/dist/nodes/Jarvis/Jarvis.node.js`);
 
-              const operation = new hr.JarvisHumanReview()
+              const operation = new jarvis.Jarvis()
                 .description.properties.find(p => p.name === "operation");
 
-              if (!operation?.options?.some(o => o.value === "sendAndWait")) {
-                console.error("ERROR: Human Review lost its sendAndWait operation, so n8n will not generate its HITL tool");
+              const actions = operation?.options ?? [];
+
+              for (const a of actions) {
+                console.log(`  action: ${a.action} (${a.value})`);
+              }
+
+              if (!actions.some(o => o.value === "sendAndWait")) {
+                console.error("ERROR: Jarvis lost its sendAndWait operation, so n8n will not generate its HITL tool");
                 process.exit(1);
               }
 
