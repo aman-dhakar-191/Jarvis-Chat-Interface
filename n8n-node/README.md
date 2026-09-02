@@ -197,6 +197,24 @@ Create one **Jarvis Gateway API** credential:
 Hit **Test** — it calls `/health` and should come back green. Every Jarvis node
 then reuses it; the secret never appears in a workflow again.
 
+## The immediate reply
+
+In **Respond → Immediately** (async) mode the trigger answers the moment the
+message arrives, before the workflow runs, and **Immediate Reply** is what it
+sends. It defaults to `Working on it...`.
+
+There is no workflow data at that point - the workflow has not started, so
+`$json` is empty and nothing from a Set node or the incoming message is
+reachable. But the expression is evaluated per request, so anything
+self-contained still varies message to message:
+
+```js
+={{ ["Working on it...", "On it...", "Give me a sec..."][Math.floor(Math.random() * 3)] }}
+```
+
+In **When Last Node Finishes** (sync) mode the field is hidden and irrelevant:
+the reply is the final node's first item.
+
 ## Respond to Webhook does not work behind this trigger
 
 n8n's **Respond to Webhook** node only recognises the core `n8n-nodes-base.webhook`

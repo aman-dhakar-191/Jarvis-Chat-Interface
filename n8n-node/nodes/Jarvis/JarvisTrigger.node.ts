@@ -25,9 +25,19 @@ export class JarvisTrigger implements INodeType {
 				name: 'default',
 				httpMethod: 'POST',
 				responseMode: '={{$parameter["responseMode"]}}',
-				// Only consulted when responseMode is lastNode: return the first item
-				// of the final node, which is the formatted reply.
-				responseData: 'Working on it...',
+				/*
+				 * One field, two meanings - see getResponseData() in n8n's own
+				 * Webhook node:
+				 *
+				 *   lastNode   -> an enum naming what to return, so the reply is
+				 *                 the final node's first item.
+				 *   onReceived -> the literal body sent back immediately.
+				 *
+				 * Hardcoding the async text here also fed it to sync mode, where
+				 * it is not a valid enum value and so never returned the reply.
+				 */
+				responseData:
+					'={{$parameter["responseMode"] === "onReceived" ? $parameter["responseText"] : "firstEntryJson"}}',
 				// Without isFullPath, n8n prefixes the webhookId to the path and the
 				// webhook registers at /webhook/<uuid>/<path> instead of
 				// /webhook/<path>. n8n's own Webhook node sets this for the same reason.
@@ -67,6 +77,19 @@ export class JarvisTrigger implements INodeType {
 						description: 'Async mode: reply later via the Jarvis node or /api/push',
 					},
 				],
+			},
+			{
+				displayName: 'Immediate Reply',
+				name: 'responseText',
+				type: 'string',
+				default: 'Working on it...',
+				description:
+					'Sent back the moment the message arrives, before the workflow runs - so no workflow data exists yet and $json is empty. The expression is evaluated per request though, so it can still vary: {{ ["Working on it...", "On it...", "Give me a sec..."][Math.floor(Math.random() * 3)] }}',
+				placeholder: 'Working on it...',
+
+				displayOptions: {
+					show: { responseMode: ['onReceived'] },
+				},
 			},
 			{
 				displayName: 'Shared Secret',

@@ -255,6 +255,23 @@ check('the trigger cannot offer responseNode, which cannot work behind it', () =
   assert.equal(modes.default, 'lastNode');
 });
 
+check('the trigger returns the reply in sync mode and the text in async mode', () => {
+  // One webhook field, two meanings: an enum under lastNode, literal body text
+  // under onReceived. Hardcoding the async text broke sync mode, which then
+  // never returned the final node's output.
+  const { responseData } = t.webhooks[0];
+  assert.match(responseData, /firstEntryJson/, 'sync mode must return the last node output');
+  assert.match(responseData, /responseText/, 'async mode must use the configurable text');
+  assert.match(responseData, /onReceived/);
+});
+
+check('the immediate reply is configurable and only shown when it applies', () => {
+  const prop = t.properties.find((p) => p.name === 'responseText');
+  assert.equal(prop.type, 'string', 'a string so an expression can vary it per message');
+  assert.equal(prop.default, 'Working on it...');
+  assert.deepEqual(prop.displayOptions.show.responseMode, ['onReceived']);
+});
+
 check('the trigger defaults to the path the gateway expects', () => {
   assert.equal(t.properties.find((p) => p.name === 'path').default, 'jarvis-chat');
 });
