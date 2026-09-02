@@ -169,6 +169,17 @@ check('the resume webhook is declared, and is not a trigger webhook', () => {
   assert.notDeepEqual(d.group, ['trigger']);
 });
 
+check('who decides approval is configurable', () => {
+  const mode = d.properties.find((p) => p.name === 'approvalMode');
+  assert.deepEqual(mode.options.map((o) => o.value), ['agent', 'always', 'never']);
+  assert.equal(mode.default, 'agent');
+  assert.deepEqual(mode.displayOptions.show.operation, ['sendAndWait']);
+
+  // The $fromAI field is pointless unless the agent is the one deciding.
+  const prop = d.properties.find((p) => p.name === 'approvalRequired');
+  assert.deepEqual(prop.displayOptions.show.approvalMode, ['agent']);
+});
+
 check('the agent decides whether a call needs approval', () => {
   const prop = d.properties.find((p) => p.name === 'approvalRequired');
   assert.equal(prop.type, 'boolean');

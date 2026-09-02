@@ -86,9 +86,19 @@ and **the agent picks which one per call**:
 | read or look something up - search the web, read email | `false` | The user is told what is happening. Nothing to approve, so the agent continues immediately. |
 | change, send, delete or spend something - send that email | `true` | Buttons in the app; the execution parks until the user answers. |
 
-That choice is the `Approval Required` field, whose default is a `$fromAI()`
-call, so the model fills it in when it invokes the tool. Replace the expression
-with a fixed `true`/`false` to take the decision away from the agent.
+**Approval Decided By** controls who makes that call:
+
+| Setting | Behaviour |
+| --- | --- |
+| **The Agent** (default) | `Approval Required` is filled per call by `$fromAI()` |
+| **Always Ask** | Every call waits for the user |
+| **Never Ask, Just Inform** | Every call tells the user and continues |
+
+Fix it yourself for anything consequential. Leaving it to the agent means the
+thing being policed also decides whether policing applies, and a model that
+misjudges once sends the email with no human in the loop. A practical split is
+two Human Review nodes on the same agent - **Always Ask** gating what leaves the
+building, **The Agent** gating the read-only tools.
 
 If the value cannot be resolved - the node used outside a tool context, where
 `$fromAI` has nothing to resolve against - it falls back to **asking**. Failing

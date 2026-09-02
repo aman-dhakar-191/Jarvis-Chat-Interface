@@ -63,18 +63,27 @@ export async function execute(
 	// Inform, or ask?
 	// ------------------------------------------------------------------
 
+	const approvalMode = this.getNodeParameter('approvalMode', 0, 'agent') as string;
+
 	/*
-	 * Normally answered by the agent through $fromAI. Outside a tool context
-	 * that expression cannot resolve and getNodeParameter throws, so fall back
-	 * to asking: failing to work out whether something needs approval must
-	 * never be the same as deciding it does not.
+	 * Fixing the mode takes the decision away from the model, which is what you
+	 * want for anything consequential. Only 'agent' consults the $fromAI answer.
+	 *
+	 * That expression cannot resolve outside a tool context, where
+	 * getNodeParameter throws, so fall back to asking: failing to work out
+	 * whether something needs approval must never be the same as deciding it
+	 * does not.
 	 */
 	let approvalRequired = true;
 
-	try {
-		approvalRequired = this.getNodeParameter('approvalRequired', 0, true) as boolean;
-	} catch {
-		approvalRequired = true;
+	if (approvalMode === 'never') {
+		approvalRequired = false;
+	} else if (approvalMode === 'agent') {
+		try {
+			approvalRequired = this.getNodeParameter('approvalRequired', 0, true) as boolean;
+		} catch {
+			approvalRequired = true;
+		}
 	}
 
 	if (!approvalRequired) {
