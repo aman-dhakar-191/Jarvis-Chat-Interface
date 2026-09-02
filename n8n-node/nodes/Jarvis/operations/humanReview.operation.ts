@@ -11,6 +11,23 @@ import { pushEvent } from '../common/gateway';
 import { requireSession } from '../common/helpers';
 import type { ApprovalChoice, ApprovalOptions } from '../common/types';
 
+/**
+ * The shape n8n's own sendAndWait nodes answer with:
+ *
+ *     { json: { data: { approved, respondedAt } } }
+ *
+ * The HITL engine runs the gated tool only when it reads an approval back, so
+ * an answer without `approved` silently ends the agent's call - the tool is
+ * simply never run.
+ *
+ * The fields are also copied flat because workflows branch on
+ * `{{ $json.approved }}`, which is what this node has always emitted and what
+ * the README documents.
+ */
+function approvalResult(fields: IDataObject): IDataObject {
+	return { ...fields, data: { ...fields } };
+}
+
 const MS_PER_UNIT: Record<string, number> = {
 	minutes: 60_000,
 	hours: 3_600_000,
@@ -72,7 +89,25 @@ export async function execute(
 			content: message,
 		});
 
-		return [[{ json: response, pairedItem: { item: 0 } }]];
+		/*
+		 * `approved: true` is the whole point: the agent asked whether it may
+		 * proceed, the answer was that it did not need to ask, so it proceeds.
+		 * Returning the gateway's own {ok, delivered} instead carries no
+		 * approval, and the gated tool never runs.
+		 */
+		return [
+			[
+				{
+					json: approvalResult({
+						approved: true,
+						informed: true,
+						delivered: response.delivered ?? null,
+						respondedAt: new Date().toISOString(),
+					}),
+					pairedItem: { item: 0 },
+				},
+			],
+		];
 	}
 
 	// ------------------------------------------------------------------
@@ -162,6 +197,6 @@ export async function webhook(this: IWebhookFunctions): Promise<IWebhookResponse
 
 	return {
 		webhookResponse: { ok: true },
-		workflowData: [[{ json: body }]],
+		workflowData: [[{ json: approvalResult(body) }]],
 	};
 }
