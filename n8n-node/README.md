@@ -118,7 +118,7 @@ n8n generates that tool by detecting the `sendAndWait` operation value - do not
 rename or remove the operation, and note that hiding it from the Actions list
 is done by naming it `*`, not by deleting it.
 
-Output after resuming:
+Output after resuming - the same fields flat and under `data`:
 
 ```json
 {
@@ -128,9 +128,17 @@ Output after resuming:
   "comment": null,
   "userId": "aman",
   "sessionId": "session_aman",
-  "respondedAt": "2026-08-31T08:15:00.000Z"
+  "respondedAt": "2026-08-31T08:15:00.000Z",
+  "data": { "approved": true, "…": "…" }
 }
 ```
+
+The flat copy is what workflows branch on. The `data` copy is what the HITL
+engine reads: it runs the gated tool only when it finds an approval there, so an
+answer without one ends the agent's call and the tool never runs. When
+`Approval Required` is false the node answers `approved: true` with
+`informed: true`, because the agent asked whether it may proceed and the answer
+was that it did not need to ask.
 
 The node has a **single output** on purpose: n8n only ever fires the first
 output of a webhook-wait node ([n8n#12823](https://github.com/n8n-io/n8n/issues/12823)).

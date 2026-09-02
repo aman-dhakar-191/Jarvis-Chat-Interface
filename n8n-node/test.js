@@ -209,8 +209,15 @@ const asyncChecks = checkAsync('the resume payload becomes workflow data', async
   const ctx = { getBodyData: () => ({ approvalId: 'apr_1', choice: 'approve', approved: true }) };
   const r = await new Jarvis().webhook.call(ctx);
   assert.deepEqual(r.webhookResponse, { ok: true });
-  assert.equal(r.workflowData[0][0].json.approvalId, 'apr_1');
-  assert.equal(r.workflowData[0][0].json.approved, true);
+
+  const { json } = r.workflowData[0][0];
+  assert.equal(json.approvalId, 'apr_1');
+  // Flat, because workflows branch on {{ $json.approved }}.
+  assert.equal(json.approved, true);
+  // Nested, because the HITL engine reads the approval there before it will
+  // run the gated tool - the shape n8n's own sendAndWait nodes answer with.
+  assert.equal(json.data.approved, true);
+  assert.equal(json.data.approvalId, 'apr_1');
 });
 
 // ---- credential ---------------------------------------------------------
