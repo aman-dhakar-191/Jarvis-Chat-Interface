@@ -117,7 +117,7 @@ jobs:
             git reset --hard origin/main
 
             echo "Commit:  $(git rev-parse HEAD)"
-            echo "Version: $(node -p 'require("./package.json").version')"
+            echo "Version: $(grep -m1 '"version"' package.json | sed -E 's/.*"version": "([^"]+)".*/\1/')"
 
       - name: Build and pack
         uses: appleboy/ssh-action@v1.2.2
@@ -218,7 +218,17 @@ jobs:
 
             # Both sides are re-derived here: a separate SSH session cannot see
             # a variable set by an earlier step.
-            SOURCE_VERSION=$(node -p 'require("./package.json").version')
+            #
+            # There is no Node on the host - the build runs inside a container -
+            # so the source version is read with grep, not `node -p`. The
+            # installed version is read by the node inside the n8n container,
+            # which does exist.
+            SOURCE_VERSION=$(grep -m1 '"version"' package.json | sed -E 's/.*"version": "([^"]+)".*/\1/')
+
+            if [ -z "$SOURCE_VERSION" ]; then
+              echo "ERROR: Could not read the version from package.json"
+              exit 1
+            fi
 
             INSTALLED_VERSION=$(docker exec ${{ env.N8N }} \
               node -p 'require("/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/package.json").version')
