@@ -1,27 +1,79 @@
 # n8n-nodes-jarvis
 
-An n8n community node for the [Jarvis Gateway](../README.md). Replaces the
-HTTP Request + Wait pair with real nodes, and moves the push secret out of node
-parameters into a proper n8n credential.
+An n8n community node package for the [Jarvis Gateway](../README.md). Replaces
+the HTTP Request + Wait pair with real nodes, and moves the push secret out of
+node parameters into a proper n8n credential.
 
 ## Nodes
 
-| Node | Purpose |
-| --- | --- |
-| **Jarvis Trigger** | Starts a workflow when a message arrives from the app. Replaces the Webhook + Normalize Chat Input pair, and accepts Telegram Trigger payloads too. Set **Respond → When Last Node Finishes** for sync mode. |
-| **Jarvis** | Sends progress, notifications and approval requests back to the app. |
+Each node does one thing, so the node picker lists them separately instead of
+hiding them behind an operation dropdown.
 
-## Operations
+| Node | Internal name | Purpose | Blocks? |
+| --- | --- | --- | --- |
+| **Jarvis Trigger** | `jarvisTrigger` | **Starts a workflow** when a message arrives from the app. Replaces the Webhook + Normalize Chat Input pair, and accepts Telegram Trigger payloads too. Set **Respond → When Last Node Finishes** for sync mode. | — |
+| **Jarvis Notification** | `jarvisNotification` | Sends a chat bubble to a session, even with nothing in flight. | No |
+| **Jarvis Progress** | `jarvisProgress` | Sends a transient status line while Jarvis works (`tool.started`, `tool.progress`, `tool.finished`, `execution.progress`). | No |
+| **Jarvis Human Review** | `jarvisHumanReview` | **Pauses the running execution**, asks the user to approve or reject in the app, and resumes when they answer. | **Yes** |
+| ~~**Jarvis (Legacy)**~~ | `jarvis` | Deprecated. The old single node with the Send Progress / Send Notification / Send and Wait operations. Still loads so saved workflows keep working, but hidden from the node picker. | — |
 
-| Operation | What it does | Blocks? |
-| --- | --- | --- |
-| **Send Progress** | Transient status line in the app while Jarvis works | No |
-| **Send Notification** | A chat bubble, even with nothing in flight | No |
-| **Ask for Approval** | Buttons in the app; parks the execution until answered | **Yes** |
+The trigger **starts** a workflow; Human Review **pauses and resumes one that is
+already running**. They both declare a webhook, but they are not
+interchangeable — see [EXTENDING.md](EXTENDING.md).
 
-*Ask for Approval* parks the execution itself — no separate Wait node. It sends
+### What each action node sends
+
+All three POST to the gateway's `/api/push` with the credential's
+`x-gateway-secret` header:
+
+```jsonc
+// Jarvis Notification
+{ "sessionId": "session_aman", "event": "notification", "content": "Done." }
+
+// Jarvis Progress
+{ "sessionId": "session_aman", "event": "tool.started", "content": "Searching your email…" }
+
+// Jarvis Human Review
+{
+  "sessionId": "session_aman",
+  "event": "approval.request",
+  "resumeUrl": "https://n8n.example.com/webhook-waiting/…",
+  "content": "The agent wants to use gmail_send…",
+  "data": {
+    "inputType": "choice",
+    "choices": [{ "value": "approve", "label": "Approve" },
+                { "value": "reject",  "label": "Reject" }],
+    "approvalType": "double",
+    "toolName": "gmail_send",
+    "toolParameters": "{\"to\":\"…\"}"
+  }
+}
+```
+
+## Human Review
+
+Human Review parks the execution itself — no separate Wait node. It sends
 n8n's `$execution.resumeUrl` to the gateway, which **stores it server-side and
 never sends it to a browser**; the app only ever sees an opaque `approvalId`.
+
+```text
+AI Agent
+   ↓
+Jarvis Human Review          → POST /api/push  (approval.request + resumeUrl)
+   ↓
+execution parked             ← putExecutionToWait(), up to the Wait For limit
+   ↓
+user approves in Jarvis      → gateway POSTs the resume URL
+   ↓
+webhook() → workflowData     ← the approval payload becomes the node's output
+   ↓
+AI Agent continues
+```
+
+Under an **AI Agent**, connect the tool variant n8n generates from this node
+(`jarvisHumanReviewHitlTool`, shown as a Human Review tool) rather than the node
+itself. That variant only exists because the node declares the `sendAndWait`
+operation — do not remove it.
 
 Output after resuming:
 
@@ -37,7 +89,7 @@ Output after resuming:
 }
 ```
 
-The node has a **single output** on purpose: n8n only ever fires the first
+Human Review has a **single output** on purpose: n8n only ever fires the first
 output of a webhook-wait node ([n8n#12823](https://github.com/n8n-io/n8n/issues/12823)).
 Branch downstream with an **IF** on `{{ $json.approved }}`.
 
@@ -78,7 +130,7 @@ directly and you can skip the first container.
 Verify it registered:
 
 ```bash
-docker exec -u node $N8N ls /home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/dist/nodes/Jarvis
+docker exec -u node $N8N ls -R /home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/dist/nodes/Jarvis
 docker logs $N8N 2>&1 | grep -i -E 'jarvis|community' | tail -20
 ```
 
@@ -86,8 +138,11 @@ docker logs $N8N 2>&1 | grep -i -E 'jarvis|community' | tail -20
 does **not** survive the volume being recreated — re-run the above if that
 happens.
 
-Confirm it loaded: the node picker should list **Jarvis**, and
-`docker logs $N8N | grep -i jarvis` should be free of load errors.
+Confirm it loaded: the node picker should list **Jarvis Trigger**, **Jarvis
+Notification**, **Jarvis Progress** and **Jarvis Human Review**, and
+`docker logs $N8N | grep -i jarvis` should be free of load errors. *Jarvis
+(Legacy)* is deliberately absent from the picker — it still loads for workflows
+that already contain it.
 
 ## Credential
 
@@ -125,9 +180,25 @@ arrangement in [docs/n8n-setup.md](../docs/n8n-setup.md).
 - `N8N_RESUME_URL_PREFIX` must allow the resume URL. It defaults to the origin
   of `N8N_WEBHOOK_URL`, which is correct when both are the same n8n instance.
 
+## Migrating off the legacy node
+
+Existing workflows containing the old **Jarvis** node keep running untouched;
+nothing about `jarvis`, its operation values or its `jarvisHitlTool` variant
+changed. To move one over, replace it with:
+
+| Old operation | New node |
+| --- | --- |
+| Send Progress | Jarvis Progress |
+| Send Notification | Jarvis Notification |
+| Send and Wait for Approval | Jarvis Human Review |
+
+Field values carry over as-is, except the notification body, which moved from
+`notifyContent` to `content`. There is no deadline to migrate, but the legacy
+node will not gain features.
+
 ## Extending it
 
-Adding operations, more trigger nodes, or another credential:
+Adding nodes, trigger nodes, or another credential:
 **[EXTENDING.md](EXTENDING.md)**.
 
 ## Development
@@ -140,11 +211,9 @@ npm test          # builds, then runs structural checks on the built package
 
 ## Status
 
-The **Jarvis** action node is installed and loading in n8n — it appears in the
-node picker with all three actions.
-
-The **Jarvis Trigger** and the approval parking/resume path are typechecked,
-built and structurally validated, but have not yet been exercised in a live
-workflow. If either misbehaves, the fallback is the Webhook + Code + Wait +
+The four nodes are typechecked, built and structurally validated. The split
+into separate nodes has not yet been exercised in a live n8n instance: confirm
+in the UI that all four appear in the picker, that the AI Agent offers the
+generated **Jarvis Human Review** tool, and that an approval round-trips. If either misbehaves, the fallback is the Webhook + Code + Wait +
 HTTP Request arrangement in [docs/interactive.md](../docs/interactive.md) and
 [docs/n8n-setup.md](../docs/n8n-setup.md), which is proven end to end.
