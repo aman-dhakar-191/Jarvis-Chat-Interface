@@ -135,34 +135,5 @@ export const humanReviewDescription: INodeProperties[] = [
 		},
 	},
 
-	/*
-	 * Shown to the user alongside the message. Both default to the expressions
-	 * the generated HITL tool resolves; when the tool strips them, execute()
-	 * falls back to evaluating the same expressions directly.
-	 */
-	{
-		displayName: 'Tool Name',
-		name: 'toolName',
-		type: 'string',
-		default: '={{ $tool.name }}',
-		description:
-			'Name of the tool the agent is asking to run. Leave as is to take it from the agent.',
-
-		displayOptions: {
-			show: { operation: [SEND_AND_WAIT_OPERATION] },
-		},
-	},
-
-	{
-		displayName: 'Tool Parameters',
-		name: 'toolParameters',
-		type: 'string',
-		default: '={{ JSON.stringify($tool.parameters) }}',
-		description:
-			'Parameters the agent wants to call the tool with. Leave as is to take them from the agent.',
-
-		displayOptions: {
-			show: { operation: [SEND_AND_WAIT_OPERATION] },
-		},
-	},
 ];
+

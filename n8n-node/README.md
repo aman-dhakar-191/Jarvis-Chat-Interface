@@ -90,10 +90,17 @@ That choice is the `Approval Required` field, whose default is a `$fromAI()`
 call, so the model fills it in when it invokes the tool. Replace the expression
 with a fixed `true`/`false` to take the decision away from the agent.
 
-If the value cannot be resolved - the node used outside a tool context, where
-`$fromAI` has nothing to resolve against - it falls back to **asking**. Failing
-to work out whether something needs approval must never be the same as deciding
-it does not.
+Only an explicit `false` skips the approval. An unset field - which arrives as
+an empty string - falls back to **asking**, as does a value that cannot be
+resolved (the node used outside a tool context, where `$fromAI` has nothing to
+bind to). A gate nobody finished configuring must not silently stop gating.
+
+The node deliberately declares **no** `toolName` or `toolParameters` parameter.
+`toolParameters` is the key n8n uses when it merges the gated tool's arguments
+into the HITL call, so a property of that name captures them here and the gated
+tool then runs with nothing - seen as a tool failing on a missing required
+argument while that argument sits on this node's input. Both values are read
+from `$tool` at execution time instead.
 
 When approval *is* required, the node parks the execution itself - no separate
 Wait node. It sends n8n's `$execution.resumeUrl` to the gateway, which **stores

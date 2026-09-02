@@ -72,7 +72,14 @@ export async function execute(
 	let approvalRequired = true;
 
 	try {
-		approvalRequired = this.getNodeParameter('approvalRequired', 0, true) as boolean;
+		const answer = this.getNodeParameter('approvalRequired', 0, true);
+
+		/*
+		 * An unconfigured field arrives as '', which is falsy - and treating
+		 * that as "no approval needed" means a gate nobody finished setting up
+		 * silently never gates. Only an explicit false skips the approval.
+		 */
+		approvalRequired = !(answer === false || answer === 'false');
 	} catch {
 		approvalRequired = true;
 	}
@@ -141,15 +148,17 @@ export async function execute(
 	// Makes the n8n editor show the node as waiting.
 	this.setMetadata({ resumeUrl });
 
-	// The generated HITL tool may not carry these properties; fall back to the
-	// agent's own tool context.
-	const toolName =
-		(this.getNodeParameter('toolName', 0, '') as string) ||
-		this.evaluateExpression('{{ $tool.name }}', 0);
-
-	const toolParameters =
-		(this.getNodeParameter('toolParameters', 0, '') as string) ||
-		this.evaluateExpression('{{ JSON.stringify($tool.parameters) }}', 0);
+	/*
+	 * Read from the agent's tool context, never declared as node parameters.
+	 *
+	 * A property named `toolParameters` collides with the key n8n uses when it
+	 * merges the gated tool's arguments into the HITL call: the model's
+	 * arguments land in this node's display field instead of reaching the gated
+	 * tool, which then runs with nothing. Seen live as Web Search failing with
+	 * "Missing parameter query" while search_query sat on this node's input.
+	 */
+	const toolName = this.evaluateExpression('{{ $tool.name }}', 0);
+	const toolParameters = this.evaluateExpression('{{ JSON.stringify($tool.parameters) }}', 0);
 
 	// ------------------------------------------------------------------
 	// Send the approval request to Jarvis
