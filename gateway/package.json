@@ -1,0 +1,20 @@
+{
+  "name": "jarvis-gateway",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Full-duplex WebSocket gateway between the Jarvis chat clients and the existing n8n Jarvis workflow",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

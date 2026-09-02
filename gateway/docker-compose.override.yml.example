@@ -1,0 +1,11 @@
+# Copy to docker-compose.override.yml for machine-specific changes.
+# Docker Compose merges it over docker-compose.yml automatically - no flags -
+# and it is gitignored, so `git pull` will never conflict with it.
+#
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+
+services:
+  jarvis-gateway:
+    # Reach the gateway directly on the VPS, bypassing Traefik, for debugging.
+    ports:
+      - "127.0.0.1:3000:3000"

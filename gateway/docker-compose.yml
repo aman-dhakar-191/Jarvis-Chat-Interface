@@ -1,0 +1,43 @@
+# Jarvis Gateway, configured for the srv1918051 VPS.
+#
+#   docker compose up -d --build
+#
+# Traefik there runs in HOST network mode, so there is no shared proxy network:
+# it discovers this container over the Docker socket and routes straight to its
+# bridge IP. That is why only the n8n network is attached below - one network
+# means Traefik has no ambiguity about which IP to use, and the gateway can
+# still reach n8n privately.
+
+services:
+  jarvis-gateway:
+    build: .
+    image: jarvis-gateway:latest
+    container_name: jarvis-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 3000
+    # Uncomment to reach the gateway directly on the VPS for debugging, before
+    # Traefik is in the picture. Bound to loopback, so it is not public.
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    networks:
+      - n8n
+    labels:
+      # Traefik runs with exposedbydefault=false, so this is required.
+      traefik.enable: "true"
+      # Hostinger provides wildcard DNS on *.srv1918051.hstgr.cloud, so this
+      # host resolves to the VPS with no DNS record to create.
+      traefik.http.routers.jarvis.rule: "Host(`jarvis.srv1918051.hstgr.cloud`)"
+      traefik.http.routers.jarvis.entrypoints: "websecure"
+      traefik.http.routers.jarvis.tls: "true"
+      traefik.http.routers.jarvis.tls.certresolver: "letsencrypt"
+      traefik.http.services.jarvis.loadbalancer.server.port: "3000"
+      traefik.docker.network: "n8n-z44q_default"
+
+networks:
+  # n8n's existing compose network. Joining it lets the gateway reach n8n at
+  # http://n8n:5678 without leaving the host.
+  n8n:
+    external: true
+    name: n8n-z44q_default

@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.log
+
+# Local-only compose tweaks. Compose merges this over docker-compose.yml
+# automatically, so `git pull` never conflicts with machine-specific edits.
+docker-compose.override.yml

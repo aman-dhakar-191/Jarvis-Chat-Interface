@@ -1,0 +1,197 @@
+{
+  "name": "Jarvis Chat Entry (sync)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "69234489-b65b-4cad-9056-ebc44bb0b462",
+      "name": "Jarvis Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "db1e9faa-e5d9-4cdf-bef1-0fdb85eb06ca"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ---------------------------------------------------------------------------\n// Normalize Chat Input\n// Accepts EITHER the Jarvis Gateway payload OR a Telegram Trigger item and\n// emits one canonical shape, so the rest of Jarvis never learns which\n// transport the message arrived on.\n// ---------------------------------------------------------------------------\n\n// Optional: paste your gateway's N8N_WEBHOOK_SECRET here to reject strangers.\n// Leave it empty to skip the check.\nconst EXPECTED_SECRET = '';\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const raw = item.json ?? {};\n  // The Webhook node nests the POST body under `body`; a sub-workflow call does not.\n  const body = raw.body ?? raw;\n  const headers = raw.headers ?? {};\n\n  if (EXPECTED_SECRET && headers['x-jarvis-secret'] !== EXPECTED_SECRET) {\n    throw new Error('Rejected: x-jarvis-secret header did not match');\n  }\n\n  // Telegram nests the text under `message`; the gateway sends `message` as a\n  // plain string, so the presence of `message.chat` is what tells them apart.\n  const tg = body.message;\n  const isTelegram = tg && typeof tg === 'object' && tg.chat;\n\n  const chatId = String(\n    isTelegram ? tg.chat.id : (body.chatId ?? body.chat_id ?? body.sessionId ?? ''),\n  );\n  // sessionId is the stable conversation key. It must never be regenerated:\n  // Jarvis keys its memory on it.\n  const sessionId = String(body.sessionId ?? chatId);\n  const messageId = String(isTelegram ? (tg.message_id ?? '') : (body.messageId ?? ''));\n  const userId = String(isTelegram ? (tg.from?.id ?? '') : (body.userId ?? ''));\n  const text = isTelegram ? (tg.text ?? tg.caption ?? '') : (body.message ?? body.content ?? '');\n\n  if (!text) {\n    throw new Error('Rejected: no message text found on the incoming payload');\n  }\n\n  out.push({\n    json: {\n      source: isTelegram ? 'telegram' : (body.source || 'custom_chat'),\n      userId,\n      sessionId,\n      chatId,\n      messageId,\n      connectionId: body.connectionId ?? null,\n      // Both names carry the text so existing nodes keep working either way.\n      message: text,\n      content: text,\n      chatInput: text,\n      timestamp: body.timestamp ?? new Date().toISOString(),\n    },\n  });\n}\n\nreturn out;\n"
+      },
+      "id": "8605f214-e614-4dfd-9b41-8bf96b3776b6",
+      "name": "Normalize Chat Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "once",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "y0jU4wbnPyQRneex",
+          "cachedResultName": "Supervisor Agent"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chatInput": "={{ $json.content }}",
+            "sessionId": "={{ $json.sessionId }}",
+            "origin": "custom_chat",
+            "user_id": "={{ $json.userId }}",
+            "platform": "web"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "chatInput",
+              "displayName": "chatInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "sessionId",
+              "displayName": "sessionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "origin",
+              "displayName": "origin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        }
+      },
+      "id": "3f7adce2-24f2-471b-962c-033974531cc2",
+      "name": "Supervisor Agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        660,
+        300
+      ],
+      "notes": "Calls the existing Supervisor Agent as a sub-workflow. Nothing in the Supervisor changes - this is an additional entry point alongside its Chat/Telegram triggers."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ---------------------------------------------------------------------------\n// Format Reply\n// Pulls Jarvis's answer out of whatever the existing workflow returned, then\n// re-attaches the routing ids the gateway needs: sessionId, chatId, messageId.\n// ---------------------------------------------------------------------------\n\nconst ctx = $('Normalize Chat Input').first().json;\n\nconst REPLY_KEYS = ['reply', 'output', 'text', 'answer', 'response', 'message', 'content', 'result'];\n\nfunction pickText(value, depth = 0) {\n  if (value == null || depth > 6) return null;\n  if (typeof value === 'string') return value.trim() || null;\n  if (Array.isArray(value)) {\n    for (const entry of value) {\n      const found = pickText(entry, depth + 1);\n      if (found) return found;\n    }\n    return null;\n  }\n  if (typeof value !== 'object') return null;\n  for (const key of REPLY_KEYS) {\n    if (typeof value[key] === 'string' && value[key].trim()) return value[key].trim();\n  }\n  for (const key of ['json', 'data', 'body', 'result', 'output', 'message']) {\n    if (value[key] && typeof value[key] === 'object') {\n      const found = pickText(value[key], depth + 1);\n      if (found) return found;\n    }\n  }\n  return null;\n}\n\nconst incoming = $input.all().map((item) => item.json);\n// The fallback keeps this workflow testable before the real Jarvis node is enabled.\nconst reply = pickText(incoming) ?? `(no Jarvis node connected yet) You said: ${ctx.message}`;\n\nreturn [{\n  json: {\n    // Several aliases so the gateway - and any other consumer - finds the text.\n    reply,\n    text: reply,\n    output: reply,\n    // Routing: the gateway delivers by messageId first, then chatId/sessionId.\n    messageId: ctx.messageId,\n    replyTo: ctx.messageId,\n    chatId: ctx.chatId,\n    sessionId: ctx.sessionId,\n    userId: ctx.userId,\n    source: ctx.source,\n  },\n}];\n"
+      },
+      "id": "a1f765c4-771b-4b7e-96c1-0b204530bcaa",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "7656ae79-b253-4634-ba29-6f72a736296d",
+      "name": "Respond to Gateway",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1100,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Jarvis Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Chat Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Chat Input": {
+      "main": [
+        [
+          {
+            "node": "Supervisor Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reply": {
+      "main": [
+        [
+          {
+            "node": "Respond to Gateway",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supervisor Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
