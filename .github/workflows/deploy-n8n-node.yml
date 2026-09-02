@@ -1,0 +1,171 @@
+name: Deploy n8n Node to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          script_stop: true
+
+          script: |
+            set -e
+
+            echo "=========================================="
+            echo "       n8n Node Deployment"
+            echo "=========================================="
+
+            cd /docker/jarvis/n8n-node
+
+            echo ""
+            echo "=== GIT UPDATE ==="
+
+            git fetch origin
+
+            git checkout main
+
+            git reset --hard origin/main
+
+            echo ""
+            echo "=== CURRENT BRANCH ==="
+            git branch --show-current
+
+            echo ""
+            echo "=== CURRENT COMMIT ==="
+            git rev-parse HEAD
+
+            echo ""
+            echo "=== SOURCE VERSION ==="
+
+            SOURCE_VERSION=$(grep -m1 '"version"' package.json | sed -E 's/.*"version": "([^"]+)".*/\1/')
+
+            echo "Source version: $SOURCE_VERSION"
+
+            echo ""
+            echo "=== BUILD & PACKAGE ==="
+
+            docker run --rm \
+              -v "$PWD":/app \
+              -w /app \
+              node:22 \
+              bash -c 'npm install && npm run build && npm pack'
+
+            echo ""
+            echo "=== PACKAGE ==="
+
+            PKG=$(ls -t n8n-nodes-*.tgz | head -1)
+
+            if [ -z "$PKG" ]; then
+              echo "ERROR: Package was not created"
+              exit 1
+            fi
+
+            echo "Package: $PKG"
+
+            echo ""
+            echo "=== COPY PACKAGE TO N8N ==="
+
+            docker cp \
+              "$PKG" \
+              n8n-z44q-n8n-1:/tmp/"$PKG"
+
+            echo ""
+            echo "=== INSTALL PACKAGE INTO N8N ==="
+
+            docker exec \
+              -u node \
+              -w /home/node/.n8n/nodes \
+              n8n-z44q-n8n-1 \
+              npm install --save /tmp/"$PKG"
+
+            echo ""
+            echo "=== RESTART N8N ==="
+
+            docker restart n8n-z44q-n8n-1
+
+            echo ""
+            echo "=== WAIT FOR N8N ==="
+
+            sleep 15
+
+            echo ""
+            echo "=== N8N CONTAINER STATUS ==="
+
+            STATUS=$(docker inspect -f '{{.State.Status}}' n8n-z44q-n8n-1)
+
+            echo "n8n status: $STATUS"
+
+            if [ "$STATUS" != "running" ]; then
+              echo "ERROR: n8n container is not running"
+              exit 1
+            fi
+
+            echo ""
+            echo "=== INSTALLED PACKAGE VERSION ==="
+
+            INSTALLED_VERSION=$(docker exec \
+              n8n-z44q-n8n-1 \
+              node -p 'require("/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/package.json").version')
+
+            echo "Installed version: $INSTALLED_VERSION"
+
+            echo ""
+            echo "=== VERSION CHECK ==="
+
+            if [ "$SOURCE_VERSION" != "$INSTALLED_VERSION" ]; then
+              echo "ERROR: Version mismatch"
+              echo "Source:    $SOURCE_VERSION"
+              echo "Installed: $INSTALLED_VERSION"
+              exit 1
+            fi
+
+            echo "Version check: PASSED"
+
+            echo ""
+            echo "=== AVAILABLE ACTIONS ==="
+
+            docker exec \
+              n8n-z44q-n8n-1 \
+              node -e '
+                const n = require(
+                  "/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/dist/nodes/Jarvis/Jarvis.node.js"
+                );
+
+                const d = new n.Jarvis().description;
+
+                const operation = d.properties.find(
+                  p => p.name === "operation"
+                );
+
+                if (!operation || !operation.options) {
+                  console.error("ERROR: No operation options found");
+                  process.exit(1);
+                }
+
+                console.log(
+                  `Found ${operation.options.length} available action(s):`
+                );
+
+                for (const option of operation.options) {
+                  console.log(`- ${option.name}`);
+                }
+              '
+
+            echo ""
+            echo "=========================================="
+            echo "       DEPLOYMENT SUCCESSFUL"
+            echo "=========================================="
