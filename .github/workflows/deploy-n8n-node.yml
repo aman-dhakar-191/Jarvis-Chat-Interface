@@ -25,7 +25,11 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT }}
-          script_stop: true
+          # Default connect timeout is 30s, which is exactly where the dial gave
+          # up on 2026-09-02. Every script here is guarded by `set -e`, so the
+          # unsupported `script_stop` input it used to pass is not needed.
+          timeout: 120s
+          command_timeout: 30m
 
           script: |
             set -e
@@ -84,6 +88,11 @@ jobs:
     name: Deploy n8n Node
     runs-on: ubuntu-latest
 
+    # Both jobs SSH into the same VPS with password auth. Run them in sequence:
+    # two runners dialling the box at once is the difference between this job
+    # and the gateway one, which passed in the run where this timed out.
+    needs: deploy-gateway
+
     steps:
       - name: Deploy n8n Node via SSH
         uses: appleboy/ssh-action@v1.2.2
@@ -92,7 +101,11 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT }}
-          script_stop: true
+          # Default connect timeout is 30s, which is exactly where the dial gave
+          # up on 2026-09-02. Every script here is guarded by `set -e`, so the
+          # unsupported `script_stop` input it used to pass is not needed.
+          timeout: 120s
+          command_timeout: 30m
 
           script: |
             set -e
@@ -203,33 +216,68 @@ jobs:
             echo "Version check: PASSED"
 
             echo ""
-            echo "=== AVAILABLE ACTIONS ==="
+            echo "=== REGISTERED NODES ==="
 
             docker exec \
               n8n-z44q-n8n-1 \
               node -e '
-                const n = require(
-                  "/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/dist/nodes/Jarvis/Jarvis.node.js"
-                );
+                const root =
+                  "/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis";
 
-                const d = new n.Jarvis().description;
+                const pkg = require(`${root}/package.json`);
 
-                const operation = d.properties.find(
-                  p => p.name === "operation"
-                );
+                // Verify what n8n will actually load: every path in the n8n
+                // manifest, not one hard-coded node file.
+                const expected = [
+                  "jarvisTrigger",
+                  "jarvisNotification",
+                  "jarvisProgress",
+                  "jarvisHumanReview",
+                  "jarvis",
+                ];
 
-                if (!operation || !operation.options) {
-                  console.error("ERROR: No operation options found");
+                const found = [];
+
+                for (const rel of pkg.n8n.nodes) {
+                  const exported = require(`${root}/${rel}`);
+                  const [Node] = Object.values(exported);
+                  const d = new Node().description;
+
+                  found.push(d.name);
+
+                  console.log(
+                    `- ${d.displayName} (${d.name})` +
+                      (d.hidden ? " [hidden/legacy]" : "")
+                  );
+                }
+
+                const missing = expected.filter(n => !found.includes(n));
+
+                if (missing.length) {
+                  console.error(
+                    `ERROR: not registered: ${missing.join(", ")}`
+                  );
                   process.exit(1);
                 }
 
-                console.log(
-                  `Found ${operation.options.length} available action(s):`
+                // The AI Agent only gets a Human Review tool while this
+                // operation value survives on the node.
+                const hr = require(
+                  `${root}/dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js`
                 );
 
-                for (const option of operation.options) {
-                  console.log(`- ${option.name}`);
+                const operation = new hr.JarvisHumanReview()
+                  .description.properties.find(p => p.name === "operation");
+
+                if (!operation?.options?.some(o => o.value === "sendAndWait")) {
+                  console.error(
+                    "ERROR: Human Review lost its sendAndWait operation, so " +
+                      "n8n will not generate its HITL tool"
+                  );
+                  process.exit(1);
                 }
+
+                console.log("HITL tool operation: present");
               '
 
             echo ""
