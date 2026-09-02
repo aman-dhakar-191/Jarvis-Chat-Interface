@@ -47,29 +47,6 @@ turn is in flight, and only one shows at a time.
 Anything that should survive the run belongs in a **notification**, which writes
 a real message.
 
-### Narrating from inside an AI Agent
-
-A canvas node can only run before or after the agent, never between its tool
-calls - those happen inside the agent and are not sequenced on the canvas. So
-placing Progress nodes around an agent gives you exactly two updates.
-
-The node is `usableAsTool`, so n8n also generates **`jarvisTool`**. Connect that
-to the agent's Tool port, set it to **Send Progress**, and let the model supply
-the Status with `$fromAI()`. The agent then narrates its own work as it goes:
-
-```text
-Agent ─┬─ Tool ── Jarvis Tool (Send Progress, Status = $fromAI(...))
-       ├─ Tool ── Search_And_Read_Emails
-       └─ Human review ── Jarvis (approval)
-```
-
-Prefer this over narrating with Human Review's inform mode: inform mode writes a
-permanent chat row per step, which fills the transcript with process noise,
-while a progress line is transient and replaced by the next one.
-
-Two costs worth knowing: every narration is an extra tool call, so it spends a
-model turn and adds latency, and whether the agent narrates at all is up to the
-model - it is a tool it may choose not to call.
 
 All three POST to the gateway's `/api/push` with the credential's
 `x-gateway-secret` header:
