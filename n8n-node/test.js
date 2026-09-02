@@ -169,6 +169,16 @@ check('the resume webhook is declared, and is not a trigger webhook', () => {
   assert.notDeepEqual(d.group, ['trigger']);
 });
 
+check('no property collides with the keys n8n uses for the gated tool call', () => {
+  // `toolParameters` is where n8n puts the gated tool's arguments when it
+  // merges them into the HITL call. Declaring a property of that name captures
+  // them here instead, and the gated tool runs with nothing.
+  const RESERVED = ['toolParameters', 'toolName', 'tool', 'hitlParameters'];
+  for (const prop of d.properties) {
+    assert.ok(!RESERVED.includes(prop.name), `${prop.name} collides with an n8n HITL payload key`);
+  }
+});
+
 check('the agent decides whether a call needs approval', () => {
   const prop = d.properties.find((p) => p.name === 'approvalRequired');
   assert.equal(prop.type, 'boolean');
