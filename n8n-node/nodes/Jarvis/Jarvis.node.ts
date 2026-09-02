@@ -110,15 +110,29 @@ export class Jarvis implements INodeType {
 					},
 
 					/*
-					 * IMPORTANT:
+					 * IMPORTANT - two separate things are load-bearing here.
 					 *
-					 * The value must stay `sendAndWait` (SEND_AND_WAIT_OPERATION).
+					 * `value` must stay `sendAndWait` (SEND_AND_WAIT_OPERATION):
 					 * n8n scans for exactly this value to generate the Jarvis
-					 * HITL tool variant; changing it removes the node from the
-					 * AI Agent's tool list.
+					 * HITL tool, which is what an AI Agent connects to.
+					 *
+					 * `name` is deliberately '*'. The node creator builds its
+					 * Actions list in useActionsGeneration.ts, which drops any
+					 * operation named '*', '' or ' ':
+					 *
+					 *     options.filter((item) => !['*', '', ' '].includes(item.name))
+					 *
+					 * so this operation stays in the description - and keeps
+					 * generating the HITL tool - without being offered as a
+					 * standalone action. Approval belongs under an agent, not
+					 * as something to drop onto a canvas by hand.
+					 *
+					 * `action` is kept as the human-readable label: it is unused
+					 * while the name is filtered, and is what would show if a
+					 * future n8n drops the filter.
 					 */
 					{
-						name: 'Send and Wait for Approval',
+						name: '*',
 						value: SEND_AND_WAIT_OPERATION,
 						description: 'Request approval and pause the execution until the user responds',
 						action: 'Send and wait for approval',

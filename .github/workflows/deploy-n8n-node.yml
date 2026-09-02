@@ -5,7 +5,14 @@ on:
     branches:
       - main
 
+  # Manual runs can deploy any branch or tag, so a change can be tried on the
+  # VPS before it is merged. Defaults to main, which is what a push deploys.
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or tag to deploy
+        required: false
+        default: main
 
 # Every SSH step below repeats the same connection block. GitHub Actions has no
 # YAML anchors and no step-level `with` defaults, so the repetition is the price
@@ -38,9 +45,23 @@ jobs:
             set -e
             cd /docker/jarvis/gateway
 
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            REF="${{ inputs.ref || 'main' }}"
+
+            git fetch origin --prune --tags
+
+            # Accept a branch, a tag, or a raw commit.
+            TARGET=$(git rev-parse --verify --quiet "origin/$REF" \
+              || git rev-parse --verify --quiet "$REF")
+
+            if [ -z "$TARGET" ]; then
+              echo "ERROR: no such ref on origin: $REF"
+              exit 1
+            fi
+
+            echo "Deploying $REF"
+
+            git checkout --detach --quiet "$TARGET"
+            git reset --hard "$TARGET"
 
             echo "Commit: $(git rev-parse HEAD)"
 
@@ -112,9 +133,23 @@ jobs:
             set -e
             cd /docker/jarvis/n8n-node
 
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            REF="${{ inputs.ref || 'main' }}"
+
+            git fetch origin --prune --tags
+
+            # Accept a branch, a tag, or a raw commit.
+            TARGET=$(git rev-parse --verify --quiet "origin/$REF" \
+              || git rev-parse --verify --quiet "$REF")
+
+            if [ -z "$TARGET" ]; then
+              echo "ERROR: no such ref on origin: $REF"
+              exit 1
+            fi
+
+            echo "Deploying $REF"
+
+            git checkout --detach --quiet "$TARGET"
+            git reset --hard "$TARGET"
 
             echo "Commit:  $(git rev-parse HEAD)"
             echo "Version: $(grep -m1 '"version"' package.json | sed -E 's/.*"version": "([^"]+)".*/\1/')"

@@ -81,13 +81,31 @@ check('the action node is a main node bound to the gateway credential', () => {
   assert.notEqual(d.hidden, true, 'the action node must stay in the node creator');
 });
 
-check('the three actions are offered under one node', () => {
+const operationOptions = d.properties.find((p) => p.name === 'operation').options;
+
+check('all three operations exist on the one node', () => {
   assert.deepEqual(operations, ['sendProgress', 'notify', 'sendAndWait']);
-  // `action` is what the node creator lists, which is how one node type still
-  // shows up as three separate picker entries.
-  for (const option of d.properties.find((p) => p.name === 'operation').options) {
+  for (const option of operationOptions) {
     assert.ok(option.action, `${option.value} has no action label`);
   }
+});
+
+check('only the two standalone actions reach the node creator', () => {
+  // useActionsGeneration.ts drops operations named '*', '' or ' ' from the
+  // Actions list, which is how sendAndWait stays in the description - and keeps
+  // generating the HITL tool - without being offered as a standalone action.
+  const HIDDEN_FROM_ACTIONS = ['*', '', ' '];
+  const listed = operationOptions
+    .filter((o) => !HIDDEN_FROM_ACTIONS.includes(o.name))
+    .map((o) => o.value);
+
+  assert.deepEqual(listed, ['sendProgress', 'notify']);
+
+  const sendAndWait = operationOptions.find((o) => o.value === 'sendAndWait');
+  assert.ok(
+    HIDDEN_FROM_ACTIONS.includes(sendAndWait.name),
+    'sendAndWait would show up as a standalone action again',
+  );
 });
 
 check('every displayOptions rule names a real operation', () => {
@@ -144,6 +162,16 @@ check('the resume webhook is declared, and is not a trigger webhook', () => {
   assert.equal(hook.name, 'default');
   assert.equal(hook.path, '');
   assert.notDeepEqual(d.group, ['trigger']);
+});
+
+check('the agent decides whether a call needs approval', () => {
+  const prop = d.properties.find((p) => p.name === 'approvalRequired');
+  assert.equal(prop.type, 'boolean');
+  assert.deepEqual(prop.displayOptions.show.operation, ['sendAndWait']);
+  // The agent fills this per call; a plain default would freeze the decision.
+  assert.match(prop.default, /\$fromAI\(/);
+  assert.match(prop.default, /'approvalRequired'/);
+  assert.match(prop.default, /'boolean'/);
 });
 
 check('the approvalOptions collection n8n carries onto the tool is intact', () => {

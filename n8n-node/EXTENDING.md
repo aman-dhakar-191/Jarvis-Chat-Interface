@@ -185,7 +185,27 @@ descriptions for an `operation` option whose value is exactly `sendAndWait`
 the `message` and `approvalOptions` properties onto the generated tool.
 
 Renaming that operation, or changing its value, silently removes the node from
-the agent's tool list. `Message` is also deliberately **not** gated on the
+the agent's tool list.
+
+It is also kept **out** of the node creator's Actions list, because approval is
+only meaningful under an agent. That is done by naming the option `*`:
+`useActionsGeneration.ts` builds the Actions list with
+
+```ts
+options.filter((item) => !['*', '', ' '].includes(item.name))
+```
+
+so the operation stays in the description - and keeps generating the tool -
+without being offered as something to drop onto a canvas. Note that dropping the
+option's `action` property does **not** hide it; that field only supplies the
+label, falling back to `startCase(item.name)`.
+
+Whether a call waits is decided per invocation by the agent, through a
+`$fromAI()` default on `approvalRequired`. `$fromAI(key, description, type)`
+lets the model fill a node parameter when it calls the tool; the description is
+prompt text, so it is written for the model. Resolving it fails outside a tool
+context, so the operation catches that and defaults to asking for approval -
+never to skipping it. `Message` is also deliberately **not** gated on the
 operation: the generated tool replaces that property with its own HITL-aware
 version, and a `displayOptions` rule naming `operation` would depend on a field
 the variant may not carry. Its default references `$tool.name` and
