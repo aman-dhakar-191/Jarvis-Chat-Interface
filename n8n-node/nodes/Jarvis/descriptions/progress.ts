@@ -21,13 +21,32 @@ export const progressDescription: INodeProperties[] = [
 		name: 'event',
 		type: 'options',
 		default: 'tool.started',
-		description: 'Which stage of the run this update reports',
+		description:
+			'Which stage of the run this update reports. The first three replace the status line; Tool Finished clears it.',
 
 		options: [
-			{ name: 'Tool Started', value: 'tool.started' },
-			{ name: 'Tool Progress', value: 'tool.progress' },
-			{ name: 'Tool Finished', value: 'tool.finished' },
-			{ name: 'Execution Progress', value: 'execution.progress' },
+			{
+				name: 'Tool Started',
+				value: 'tool.started',
+				description: 'A step is beginning. Replaces the status line.',
+			},
+			{
+				name: 'Tool Progress',
+				value: 'tool.progress',
+				description:
+					'A step is still running. Replaces the status line, so send it as often as there is something new to say.',
+			},
+			{
+				name: 'Tool Finished',
+				value: 'tool.finished',
+				description: 'The step is over. Clears the status line.',
+			},
+			{
+				name: 'Execution Progress',
+				value: 'execution.progress',
+				description:
+					'Progress of the run as a whole rather than one step. Replaces the status line.',
+			},
 		],
 
 		displayOptions: {

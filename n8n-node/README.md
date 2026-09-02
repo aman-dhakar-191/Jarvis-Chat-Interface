@@ -27,11 +27,26 @@ separate entries even though they are one node type.
 | --- | --- | --- |
 | **Send Progress** | Transient status line in the app while Jarvis works | No |
 | **Send Notification** | A chat bubble, even with nothing in flight | No |
+| **Send and Wait for Approval** | Buttons in the app; parks the execution until answered | **Yes** |
 
-There is a third operation, `sendAndWait`, which is deliberately **not** listed
-as an action: it is only meaningful under an AI Agent, so it is reached through
-the generated **Jarvis Human Review** tool rather than dropped onto a canvas by
-hand. See below.
+Under an AI Agent, reach the third one through the generated **Jarvis Human
+Review** tool rather than placing the node by hand - see below.
+
+### Progress stages
+
+A status line lives under the typing indicator, so it is only visible while a
+turn is in flight, and only one shows at a time.
+
+| Stage | Effect |
+| --- | --- |
+| **Tool Started** | Replaces the status line - "Searching your email…" |
+| **Tool Progress** | Replaces it again. Send as often as there is something new to say. |
+| **Tool Finished** | **Clears** it. The step is over. |
+| **Execution Progress** | Replaces it, for the run as a whole rather than one step. |
+
+Anything that should survive the run belongs in a **notification**, which writes
+a real message.
+
 
 All three POST to the gateway's `/api/push` with the credential's
 `x-gateway-secret` header:
@@ -181,6 +196,24 @@ Create one **Jarvis Gateway API** credential:
 
 Hit **Test** — it calls `/health` and should come back green. Every Jarvis node
 then reuses it; the secret never appears in a workflow again.
+
+## The immediate reply
+
+In **Respond → Immediately** (async) mode the trigger answers the moment the
+message arrives, before the workflow runs, and **Immediate Reply** is what it
+sends. It defaults to `Working on it...`.
+
+There is no workflow data at that point - the workflow has not started, so
+`$json` is empty and nothing from a Set node or the incoming message is
+reachable. But the expression is evaluated per request, so anything
+self-contained still varies message to message:
+
+```js
+={{ ["Working on it...", "On it...", "Give me a sec..."][Math.floor(Math.random() * 3)] }}
+```
+
+In **When Last Node Finishes** (sync) mode the field is hidden and irrelevant:
+the reply is the final node's first item.
 
 ## Respond to Webhook does not work behind this trigger
 

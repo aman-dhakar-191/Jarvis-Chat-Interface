@@ -469,9 +469,19 @@ function handleEvent(event) {
       render();
       break;
 
-    case 'assistant.message':
-    case 'notification': {
+    case 'assistant.message': {
       settle(event.data.replyTo, 'sent');
+      addMessage({ id: uuid(), role: 'assistant', content: event.data.content ?? '', ts: Date.now() });
+      break;
+    }
+
+    case 'notification': {
+      // Only a notification that answers the tracked execution - n8n pushed it
+      // with a messageId, so the gateway set replyTo - ends the turn. A mid-run
+      // one must NOT retire the thinking indicator: progress is rendered as a
+      // caption on that indicator, so settling here makes every later
+      // tool.started/progress/finished arrive and draw nothing.
+      if (event.data.replyTo) settle(event.data.replyTo, 'sent');
       addMessage({ id: uuid(), role: 'assistant', content: event.data.content ?? '', ts: Date.now() });
       break;
     }
@@ -484,9 +494,16 @@ function handleEvent(event) {
     // Anything n8n pushes mid-run: which tool is running, what it found.
     case 'tool.started':
     case 'tool.progress':
-    case 'tool.finished':
     case 'execution.progress':
       state.progress = event.data.content || '';
+      render();
+      break;
+
+    // The step is over, so the status line describing it should go rather than
+    // sit there stale until the next update. Anything worth keeping after the
+    // step ends belongs in a notification, which writes a real message.
+    case 'tool.finished':
+      state.progress = '';
       render();
       break;
 
