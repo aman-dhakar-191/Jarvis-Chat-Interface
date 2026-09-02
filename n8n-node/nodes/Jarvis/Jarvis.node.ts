@@ -132,21 +132,25 @@ export class Jarvis implements INodeType {
 					 * Keep your old operation if you still want to use
 					 * the Jarvis node directly in normal workflows.
 					 */
-					{
+					/*
+{
 						name: 'Ask for Approval',
 						value: 'askApproval',
 						description:
 							'Pause the workflow until the user answers in Jarvis',
 						action: 'Ask for approval',
 					},
+*/
 
-					{
+					/*
+{
 						name: 'Ask a Question',
 						value: 'askQuestion',
 						description:
 							'Pause the workflow and ask the user for text',
 						action: 'Ask a question',
 					},
+*/
 				],
 			},
 
@@ -843,7 +847,8 @@ export class Jarvis implements INodeType {
 		// OLD ASK APPROVAL
 		// ==================================================================
 
-		if (operation === 'askApproval') {
+		/*
+if (operation === 'askApproval') {
 			const sessionId = requireSession(
 				this.getNodeParameter('sessionId', 0),
 				0,
@@ -975,12 +980,14 @@ export class Jarvis implements INodeType {
 
 			return [items];
 		}
+*/
 
 		// ==================================================================
 		// ASK QUESTION
 		// ==================================================================
 
-		if (operation === 'askQuestion') {
+		/*
+if (operation === 'askQuestion') {
 			const sessionId = requireSession(
 				this.getNodeParameter('sessionId', 0),
 				0,
@@ -1082,6 +1089,7 @@ export class Jarvis implements INodeType {
 
 			return [items];
 		}
+*/
 
 		// ==================================================================
 		// NORMAL NOTIFICATION / PROGRESS
