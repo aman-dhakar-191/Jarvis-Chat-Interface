@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-jarvis",
-  "version": "0.7.0",
-  "description": "n8n nodes for the Jarvis Gateway: trigger, notifications, progress and human-in-the-loop approvals for the Jarvis chat app",
+  "version": "0.8.0",
+  "description": "n8n node for the Jarvis Gateway: send progress, notifications and human-in-the-loop approvals to the Jarvis chat app",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -26,11 +26,8 @@
       "dist/credentials/JarvisGatewayApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/Jarvis/Trigger/JarvisTrigger.node.js",
-      "dist/nodes/Jarvis/Notification/JarvisNotification.node.js",
-      "dist/nodes/Jarvis/Progress/JarvisProgress.node.js",
-      "dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js",
-      "dist/nodes/Jarvis/Jarvis.node.js"
+      "dist/nodes/Jarvis/Jarvis.node.js",
+      "dist/nodes/Jarvis/JarvisTrigger.node.js"
     ]
   },
   "devDependencies": {

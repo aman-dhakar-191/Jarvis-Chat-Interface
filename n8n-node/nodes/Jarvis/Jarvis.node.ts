@@ -1,6 +1,5 @@
 import {
-	WAIT_INDEFINITELY,
-	type IDataObject,
+	SEND_AND_WAIT_OPERATION,
 	type IExecuteFunctions,
 	type INodeExecutionData,
 	type INodeType,
@@ -9,33 +8,38 @@ import {
 	type IWebhookResponseData,
 } from 'n8n-workflow';
 
-import { getPushUrl, pushEvent } from './common/gateway';
+import { getPushUrl } from './common/gateway';
 import { requireSession } from './common/helpers';
-import type { ApprovalOptions } from './common/types';
+
+import { humanReviewDescription } from './descriptions/humanReview';
+import { notificationDescription } from './descriptions/notification';
+import { progressDescription } from './descriptions/progress';
+
+import * as humanReview from './operations/humanReview.operation';
+import * as notification from './operations/notification.operation';
+import * as progress from './operations/progress.operation';
 
 /**
- * DEPRECATED - superseded by the Jarvis Notification, Jarvis Progress and
- * Jarvis Human Review nodes.
+ * One integration node with several actions, laid out the way n8n's own
+ * Telegram node is: the operations live in `operations/`, their fields in
+ * `descriptions/`, and the human-in-the-loop operation keeps its own module
+ * because it owns the whole execution rather than one item.
  *
- * It stays registered, keeps the node name `jarvis` and keeps every operation
- * value so that workflows already saved with it - and the `jarvisHitlTool`
- * n8n generates from its `sendAndWait` operation - keep loading and running.
- * `hidden` only removes it from the node creator panel. Do not rename it, and
- * do not add features here; add them to the focused nodes instead.
+ * Each operation's `action` is what the node creator lists, so the picker still
+ * offers "Send progress", "Send notification" and "Send and wait for approval"
+ * as separate entries without them being separate node types.
  */
 export class Jarvis implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Jarvis (Legacy)',
+		displayName: 'Jarvis',
 		name: 'jarvis',
 		icon: 'file:jarvis.svg',
 		group: ['output'],
 		version: 1,
-		hidden: true,
 
 		subtitle: '={{$parameter["operation"]}}',
 
-		description:
-			'Deprecated: use Jarvis Notification, Jarvis Progress or Jarvis Human Review instead',
+		description: 'Send notifications and request human approval through the Jarvis chat app',
 
 		defaults: {
 			name: 'Jarvis',
@@ -44,17 +48,12 @@ export class Jarvis implements INodeType {
 		/*
 		 * IMPORTANT:
 		 *
-		 * Keep this node as a normal `main` node.
-		 *
-		 * n8n will automatically generate:
+		 * Keep this as a normal `main` node. n8n generates
 		 *
 		 *     jarvisHitlTool
 		 *
-		 * when it detects the `sendAndWait` operation below.
-		 *
-		 * That generated node becomes:
-		 *
-		 *     ai_tool -> Jarvis Human Review -> ai_tool
+		 * itself when it detects the sendAndWait operation below, and that
+		 * generated node is what an AI Agent connects to as ai_tool.
 		 */
 		inputs: ['main'] as INodeTypeDescription['inputs'],
 		outputs: ['main'] as INodeTypeDescription['outputs'],
@@ -67,13 +66,10 @@ export class Jarvis implements INodeType {
 		],
 
 		/*
-		 * Resume webhook.
-		 *
-		 * n8n exposes:
-		 *
-		 *     $execution.resumeUrl
-		 *
-		 * while the execution is waiting.
+		 * Resume webhook, used only by sendAndWait. n8n exposes
+		 * $execution.resumeUrl while the execution is waiting, and
+		 * restartWebhook is what makes the gateway's call resume the parked
+		 * execution instead of starting a new one.
 		 */
 		webhooks: [
 			{
@@ -116,24 +112,22 @@ export class Jarvis implements INodeType {
 					/*
 					 * IMPORTANT:
 					 *
-					 * The exact value MUST be `sendAndWait`.
-					 *
-					 * n8n detects this operation and automatically
-					 * generates the Jarvis HITL Tool variant.
+					 * The value must stay `sendAndWait` (SEND_AND_WAIT_OPERATION).
+					 * n8n scans for exactly this value to generate the Jarvis
+					 * HITL tool variant; changing it removes the node from the
+					 * AI Agent's tool list.
 					 */
 					{
 						name: 'Send and Wait for Approval',
-						value: 'sendAndWait',
-						description:
-							'Request approval and pause the execution until the user responds',
+						value: SEND_AND_WAIT_OPERATION,
+						description: 'Request approval and pause the execution until the user responds',
 						action: 'Send and wait for approval',
 					},
-
 				],
 			},
 
 			// ================================================================
-			// SESSION
+			// SHARED
 			// ================================================================
 
 			{
@@ -142,24 +136,14 @@ export class Jarvis implements INodeType {
 				type: 'string',
 				default: '={{ $json.sessionId }}',
 				required: true,
-				description:
-					'Jarvis conversation/session that should receive the event',
+				description: 'Jarvis conversation/session that should receive the event',
 			},
 
-			// ================================================================
-			// MESSAGE
-			// ================================================================
-
 			/*
-			 * IMPORTANT:
-			 *
-			 * The generated jarvisHitlTool replaces this property with
-			 * its own HITL-aware Message property.
-			 *
-			 * n8n's generated HITL version can use:
-			 *
-			 *     $tool.name
-			 *     $tool.parameters
+			 * Deliberately not gated on the operation, as it always has been:
+			 * the generated jarvisHitlTool replaces this property with its own
+			 * HITL-aware Message property, and a displayOptions rule naming
+			 * `operation` would depend on a field that variant may not carry.
 			 */
 			{
 				displayName: 'Message',
@@ -175,234 +159,16 @@ export class Jarvis implements INodeType {
 					rows: 4,
 				},
 
-				description:
-					'Message shown to the user before the tool is executed',
+				description: 'Message shown to the user before the tool is executed',
 			},
 
 			// ================================================================
-			// SEND PROGRESS
+			// PER-OPERATION FIELDS
 			// ================================================================
 
-			{
-				displayName: 'Status',
-				name: 'content',
-				type: 'string',
-				default: '',
-				required: true,
-				placeholder: 'Searching your email…',
-				description: 'Progress/status message',
-
-				displayOptions: {
-					show: {
-						operation: ['sendProgress'],
-					},
-				},
-			},
-
-			{
-				displayName: 'Stage',
-				name: 'event',
-				type: 'options',
-				default: 'tool.started',
-
-				options: [
-					{
-						name: 'Tool Started',
-						value: 'tool.started',
-					},
-					{
-						name: 'Tool Progress',
-						value: 'tool.progress',
-					},
-					{
-						name: 'Tool Finished',
-						value: 'tool.finished',
-					},
-					{
-						name: 'Execution Progress',
-						value: 'execution.progress',
-					},
-				],
-
-				displayOptions: {
-					show: {
-						operation: ['sendProgress'],
-					},
-				},
-			},
-
-			// ================================================================
-			// NOTIFICATION
-			// ================================================================
-
-			{
-				displayName: 'Message',
-				name: 'notifyContent',
-				type: 'string',
-				typeOptions: {
-					rows: 3,
-				},
-				default: '',
-				required: true,
-
-				displayOptions: {
-					show: {
-						operation: ['notify'],
-					},
-				},
-			},
-
-			// ================================================================
-			// N8N HITL APPROVAL OPTIONS
-			// ================================================================
-
-			/*
-			 * n8n's HITL generator looks specifically for a property
-			 * called `approvalOptions`.
-			 *
-			 * It will preserve this property on jarvisHitlTool.
-			 */
-			{
-				displayName: 'Approval Options',
-				name: 'approvalOptions',
-				type: 'fixedCollection',
-
-				placeholder: 'Add option',
-
-				default: {},
-
-				options: [
-					{
-						displayName: 'Values',
-						name: 'values',
-
-						values: [
-							{
-								displayName: 'Type of Approval',
-								name: 'approvalType',
-								type: 'options',
-
-								default: 'double',
-
-								options: [
-									{
-										name: 'Approve Only',
-										value: 'single',
-									},
-									{
-										name: 'Approve and Disapprove',
-										value: 'double',
-									},
-								],
-							},
-
-							{
-								displayName: 'Approve Button Label',
-								name: 'approveLabel',
-								type: 'string',
-								default: 'Approve',
-
-								displayOptions: {
-									show: {
-										approvalType: ['single', 'double'],
-									},
-								},
-							},
-
-							{
-								displayName: 'Disapprove Button Label',
-								name: 'disapproveLabel',
-								type: 'string',
-								default: 'Reject',
-
-								displayOptions: {
-									show: {
-										approvalType: ['double'],
-									},
-								},
-							},
-						],
-					},
-				],
-
-				displayOptions: {
-					show: {
-						operation: ['sendAndWait'],
-					},
-				},
-			},
-
-			// ================================================================
-			// WAIT SETTINGS
-			// ================================================================
-
-			{
-				displayName: 'Limit Wait Time',
-				name: 'limitWaitTime',
-				type: 'boolean',
-
-				default: true,
-
-				description:
-					'Whether to give up after a specified amount of time',
-
-				displayOptions: {
-					show: {
-						operation: ['sendAndWait'],
-					},
-				},
-			},
-
-			{
-				displayName: 'Wait For',
-				name: 'resumeAmount',
-				type: 'number',
-
-				default: 1,
-
-				typeOptions: {
-					minValue: 1,
-				},
-
-				displayOptions: {
-					show: {
-						operation: ['sendAndWait'],
-
-						limitWaitTime: [true],
-					},
-				},
-			},
-
-			{
-				displayName: 'Unit',
-				name: 'resumeUnit',
-				type: 'options',
-
-				default: 'hours',
-
-				options: [
-					{
-						name: 'Minutes',
-						value: 'minutes',
-					},
-					{
-						name: 'Hours',
-						value: 'hours',
-					},
-					{
-						name: 'Days',
-						value: 'days',
-					},
-				],
-
-				displayOptions: {
-					show: {
-						operation: ['sendAndWait'],
-
-						limitWaitTime: [true],
-					},
-				},
-			},
+			...progressDescription,
+			...notificationDescription,
+			...humanReviewDescription,
 		],
 	};
 
@@ -410,301 +176,45 @@ export class Jarvis implements INodeType {
 	// RESUME WEBHOOK
 	// ======================================================================
 
-	async webhook(
-		this: IWebhookFunctions,
-	): Promise<IWebhookResponseData> {
-		const body = (this.getBodyData() ?? {}) as IDataObject;
-
-		/*
-		 * The Jarvis Gateway posts something like:
-		 *
-		 * {
-		 *   "approved": true,
-		 *   "choice": "approve"
-		 * }
-		 *
-		 * This becomes the result of the waiting node.
-		 */
-		return {
-			webhookResponse: {
-				ok: true,
-			},
-
-			workflowData: [
-				[
-					{
-						json: body,
-					},
-				],
-			],
-		};
+	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+		return await humanReview.webhook.call(this);
 	}
 
 	// ======================================================================
 	// EXECUTE
 	// ======================================================================
 
-	async execute(
-		this: IExecuteFunctions,
-	): Promise<INodeExecutionData[][]> {
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
-
-		const operation = this.getNodeParameter(
-			'operation',
-			0,
-		) as string;
-
-		// ------------------------------------------------------------------
-		// Gateway endpoint
-		// ------------------------------------------------------------------
+		const operation = this.getNodeParameter('operation', 0) as string;
 
 		const pushUrl = await getPushUrl(this);
 
-		// ==================================================================
-		// SEND AND WAIT
-		//
-		// This is the operation that causes n8n to generate:
-		//
-		//     jarvisHitlTool
-		//
-		// ==================================================================
-
-		if (operation === 'sendAndWait') {
-			const sessionId = requireSession(
-				this,
-				this.getNodeParameter('sessionId', 0),
-				0,
-			);
-
-			/*
-			 * IMPORTANT:
-			 *
-			 * The generated HITL node provides this property.
-			 *
-			 * It normally contains:
-			 *
-			 * "The agent wants to use {{ $tool.name }}"
-			 *
-			 * plus the actual $tool.parameters.
-			 */
-			const message = this.getNodeParameter(
-				'message',
-				0,
-			) as string;
-
-			// --------------------------------------------------------------
-			// Approval options
-			// --------------------------------------------------------------
-
-			const approvalOptions =
-				this.getNodeParameter(
-					'approvalOptions',
-					0,
-					{},
-				) as ApprovalOptions;
-
-			const approvalValues =
-				approvalOptions?.values ?? {};
-
-			const approvalType =
-				approvalValues.approvalType ?? 'double';
-
-			const approveLabel =
-				approvalValues.approveLabel ??
-				'Approve';
-
-			const disapproveLabel =
-				approvalValues.disapproveLabel ??
-				'Reject';
-
-			const choices = [
-				{
-					value: 'approve',
-					label: approveLabel,
-				},
-
-				...(approvalType === 'double'
-					? [
-							{
-								value: 'reject',
-								label: disapproveLabel,
-							},
-						]
-					: []),
-			];
-
-			// --------------------------------------------------------------
-			// Resume URL
-			// --------------------------------------------------------------
-
-			const resumeUrl =
-				this.evaluateExpression(
-					'{{ $execution.resumeUrl }}',
-					0,
-				) as string;
-
-			/*
-			 * Makes the n8n editor show the node as waiting.
-			 */
-			this.setMetadata({
-				resumeUrl,
-			});
-
-			// --------------------------------------------------------------
-			// Send approval request to Jarvis
-			// --------------------------------------------------------------
-
-			await pushEvent(this, pushUrl, {
-				sessionId,
-
-				event: 'approval.request',
-
-				resumeUrl,
-
-				content: message,
-
-				data: {
-					inputType: 'choice',
-
-					choices,
-
-					/*
-					 * Useful for your Jarvis UI.
-					 */
-					approvalType,
-
-					toolName: this.evaluateExpression('{{ $tool.name }}', 0),
-
-					toolParameters: this.evaluateExpression(
-						'{{ JSON.stringify($tool.parameters) }}',
-						0,
-					),
-				},
-			});
-
-			// --------------------------------------------------------------
-			// Wait
-			// --------------------------------------------------------------
-
-			let waitTill = WAIT_INDEFINITELY;
-
-			if (
-				this.getNodeParameter(
-					'limitWaitTime',
-					0,
-					true,
-				) as boolean
-			) {
-				const amount =
-					this.getNodeParameter(
-						'resumeAmount',
-						0,
-						1,
-					) as number;
-
-				const unit =
-					this.getNodeParameter(
-						'resumeUnit',
-						0,
-						'hours',
-					) as string;
-
-				const perUnit: Record<
-					string,
-					number
-				> = {
-					minutes: 60_000,
-					hours: 3_600_000,
-					days: 86_400_000,
-				};
-
-				waitTill = new Date(
-					Date.now() +
-						amount *
-							(perUnit[unit] ??
-								perUnit.hours),
-				);
-			}
-
-			await this.putExecutionToWait(waitTill);
-
-			/*
-			 * When the Jarvis Gateway calls resumeUrl,
-			 * n8n resumes through webhook().
-			 */
-			return [items];
+		// Parks the execution and returns through webhook(), so it owns the
+		// whole node output rather than one item.
+		if (operation === SEND_AND_WAIT_OPERATION) {
+			return await humanReview.execute.call(this, pushUrl);
 		}
-
-		// ==================================================================
-		// NORMAL NOTIFICATION / PROGRESS
-		// ==================================================================
 
 		const results: INodeExecutionData[] = [];
 
-		for (
-			let i = 0;
-			i < items.length;
-			i++
-		) {
-			const sessionId = requireSession(
-				this,
-				this.getNodeParameter('sessionId', i),
-				i,
-			);
-
-			let content = '';
-
-			let event = 'notification';
-
-			if (operation === 'notify') {
-				content =
-					this.getNodeParameter(
-						'notifyContent',
-						i,
-					) as string;
-
-				event = 'notification';
-			} else {
-				content =
-					this.getNodeParameter(
-						'content',
-						i,
-					) as string;
-
-				event =
-					this.getNodeParameter(
-						'event',
-						i,
-						'tool.started',
-					) as string;
-			}
+		for (let i = 0; i < items.length; i++) {
+			// Outside the try on purpose: an unaddressed event is a
+			// configuration mistake, and always has failed the node even when
+			// continueOnFail is set.
+			const sessionId = requireSession(this, this.getNodeParameter('sessionId', i), i);
 
 			try {
-				const response = (await pushEvent(this, pushUrl, {
-					sessionId,
-					event,
-					content,
-				})) as IDataObject;
-
-				results.push({
-					json: response,
-
-					pairedItem: {
-						item: i,
-					},
-				});
+				results.push(
+					operation === 'notify'
+						? await notification.execute.call(this, i, sessionId, pushUrl)
+						: await progress.execute.call(this, i, sessionId, pushUrl),
+				);
 			} catch (error) {
 				if (this.continueOnFail()) {
 					results.push({
-						json: {
-							error: (
-								error as Error
-							).message,
-						},
-
-						pairedItem: {
-							item: i,
-						},
+						json: { error: (error as Error).message },
+						pairedItem: { item: i },
 					});
 
 					continue;

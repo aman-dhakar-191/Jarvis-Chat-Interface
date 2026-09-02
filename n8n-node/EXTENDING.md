@@ -5,8 +5,10 @@ to get the result back into your n8n.
 
 ## Layout
 
-One directory per node, plus a `common/` directory for anything two of them
-would otherwise duplicate.
+One integration, one action node, with each action's implementation and fields
+in their own module. This mirrors n8n's own Telegram node, which keeps
+`Telegram.node.ts` beside a `hitl/` directory holding the send-and-wait
+descriptions, setup and webhook.
 
 ```text
 n8n-node/
@@ -14,26 +16,24 @@ n8n-node/
 ├── credentials/
 │   └── JarvisGatewayApi.credentials.ts
 ├── nodes/Jarvis/
-│   ├── Trigger/
-│   │   ├── JarvisTrigger.node.ts   starts a workflow
-│   │   └── normalize.ts            gateway/Telegram payload → one shape
-│   ├── Notification/
-│   │   └── JarvisNotification.node.ts
-│   ├── Progress/
-│   │   └── JarvisProgress.node.ts
-│   ├── HumanReview/
-│   │   └── JarvisHumanReview.node.ts   parks and resumes an execution
+│   ├── Jarvis.node.ts              the action node: routes to an operation
+│   ├── JarvisTrigger.node.ts       trigger node, starts a workflow
+│   ├── normalize.ts                gateway/Telegram payload → one shape
+│   ├── operations/                 what each action does
+│   │   ├── notification.operation.ts
+│   │   ├── progress.operation.ts
+│   │   └── humanReview.operation.ts   execute() + webhook(), parks and resumes
+│   ├── descriptions/               the fields each action shows
+│   │   ├── notification.ts
+│   │   ├── progress.ts
+│   │   └── humanReview.ts
 │   ├── common/
 │   │   ├── gateway.ts              getPushUrl() + pushEvent()
 │   │   ├── helpers.ts              requireSession()
 │   │   └── types.ts                JarvisEvent, ApprovalChoice, ApprovalRequest
-│   ├── Jarvis.node.ts              LEGACY, hidden, kept for saved workflows
 │   └── jarvis.svg                  icon, copied to dist by scripts/copy-icons.js
 └── test.js                         structural checks on the built package
 ```
-
-Nodes in a subdirectory reference the shared icon relatively, as
-`icon: 'file:../jarvis.svg'` — one icon file, not one per node.
 
 Anything new must be registered in `package.json`, or n8n will never see it:
 
@@ -42,11 +42,8 @@ Anything new must be registered in `package.json`, or n8n will never see it:
   "n8nNodesApiVersion": 1,
   "credentials": ["dist/credentials/JarvisGatewayApi.credentials.js"],
   "nodes": [
-    "dist/nodes/Jarvis/Trigger/JarvisTrigger.node.js",
-    "dist/nodes/Jarvis/Notification/JarvisNotification.node.js",
-    "dist/nodes/Jarvis/Progress/JarvisProgress.node.js",
-    "dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js",
-    "dist/nodes/Jarvis/Jarvis.node.js"
+    "dist/nodes/Jarvis/Jarvis.node.js",
+    "dist/nodes/Jarvis/JarvisTrigger.node.js"
   ]
 }
 ```
@@ -70,38 +67,71 @@ fails the same way on an empty `sessionId`.
 
 | Kind | Implements | Use for |
 | --- | --- | --- |
-| **Action** | `execute()` | Doing something and returning data. `Jarvis Notification` and `Jarvis Progress` are ones. |
+| **Action** | `execute()` | Doing something and returning data. Send Progress and Send Notification are ones. |
 | **Trigger (webhook)** | `webhook()`, `group: ['trigger']`, `inputs: []` | Starting a workflow when something arrives. `Jarvis Trigger` is one. |
-| **Action that waits** | `execute()` + `webhook()` + `restartWebhook` | Parking until a human answers. `Jarvis Human Review` is one. |
+| **Action that waits** | `execute()` + `webhook()` + `restartWebhook` | Parking until a human answers. Send and Wait for Approval is one. |
 
 A trigger and a waiting action both declare a `webhook`, but they are not the
 same thing: only the waiting action sets `restartWebhook: true`, which is what
 makes n8n expose `$execution.resumeUrl` and resume a parked execution rather
 than start a new one.
 
-## Adding another action
+## Adding an action
 
-Add a node, not an operation. `Notification/JarvisNotification.node.ts` is the
-smallest complete template:
+Add an operation to the existing node - not a new node type. The node creator
+lists each operation's `action` separately, so a new action appears in the
+picker on its own without becoming another node the user has to find.
 
-1. Create `nodes/Jarvis/<Thing>/Jarvis<Thing>.node.ts` with a unique
-   `name` (`jarvisClearChat`), `icon: 'file:../jarvis.svg'`, and
-   `credentials: [{ name: 'jarvisGatewayApi', required: true }]`.
-2. Declare only the parameters that node needs — no `operation` field and no
-   `displayOptions` gymnastics.
-3. In `execute()`, loop over `this.getInputData()`, call `requireSession` and
-   `pushEvent`, set `pairedItem`, and honour `this.continueOnFail()`.
-4. Register the compiled path in `package.json`'s `n8n.nodes`.
-5. Add it to `test.js` — the existing checks assert every registered path
-   exists, that each description is complete, and that each node's icon
-   resolves from its own dist directory.
+1. Add it to the `operation` options in `Jarvis.node.ts`:
 
-**Do not add operations to the legacy `Jarvis` node.** It is `hidden: true` and
-exists only so workflows saved before the split keep loading.
+   ```ts
+   {
+     name: 'Clear Chat',
+     value: 'clearChat',
+     description: 'Wipe the transcript shown on the device',
+     action: 'Clear chat',
+   },
+   ```
+
+2. Put its fields in `descriptions/clearChat.ts`, each gated on the operation,
+   and spread them into the node's `properties`:
+
+   ```ts
+   export const clearChatDescription: INodeProperties[] = [
+     {
+       displayName: 'Confirm',
+       name: 'confirm',
+       type: 'boolean',
+       default: false,
+       displayOptions: { show: { operation: ['clearChat'] } },
+     },
+   ];
+   ```
+
+3. Put the work in `operations/clearChat.operation.ts`, exporting an `execute`
+   with the same shape as the other per-item operations:
+
+   ```ts
+   export async function execute(
+     this: IExecuteFunctions,
+     itemIndex: number,
+     sessionId: string,
+     pushUrl: string,
+   ): Promise<INodeExecutionData> { … }
+   ```
+
+   The node owns the item loop, the session validation and `continueOnFail`, so
+   an operation module only builds its body and pushes it.
+
+4. Dispatch to it in `Jarvis.node.ts`.
+
+5. Extend `test.js` - the existing checks already assert that every
+   `displayOptions` rule names a real operation, that each operation can reach
+   the fields it needs, and that the wait controls stay on `sendAndWait` only.
 
 ## Adding a trigger node
 
-Use `Trigger/JarvisTrigger.node.ts` as the template. The essentials:
+Use `JarvisTrigger.node.ts` as the template. The essentials:
 
 ```ts
 group: ['trigger'],
@@ -124,9 +154,9 @@ For a trigger that is **not** webhook-driven, implement `poll()` with
 connection such as a WebSocket client. A `trigger()` implementation must return
 a `closeFunction` so n8n can tear the connection down.
 
-## Adding a node that waits for a human
+## Adding an action that waits for a human
 
-Follow `HumanReview/JarvisHumanReview.node.ts`:
+Follow `operations/humanReview.operation.ts`:
 
 ```ts
 webhooks: [{ name: 'default', httpMethod: 'POST',
@@ -149,17 +179,18 @@ resume instead of continuing the parked one.
 ### The AI Agent HITL tool
 
 n8n — not this package — generates the Human-in-the-Loop tool variant
-(`jarvisHumanReviewHitlTool`) that an AI Agent connects to. It does that by
-scanning node descriptions for an `operation` option whose value is exactly
-`sendAndWait`, and it carries over the `message` and `approvalOptions`
-properties onto the generated tool.
+(`jarvisHitlTool`) that an AI Agent connects to. It does that by scanning node
+descriptions for an `operation` option whose value is exactly `sendAndWait`
+(exported as `SEND_AND_WAIT_OPERATION` by `n8n-workflow`), and it carries over
+the `message` and `approvalOptions` properties onto the generated tool.
 
-So `JarvisHumanReview` keeps a one-option `operation` field even though it has
-only one job. Removing it, renaming it, or changing that value silently removes
-the node from the agent's tool list. The `message` default deliberately
-references `$tool.name` and `$tool.parameters`, which only resolve inside the
-generated tool; `execute()` falls back to evaluating them directly, so the node
-also works when wired by hand.
+Renaming that operation, or changing its value, silently removes the node from
+the agent's tool list. `Message` is also deliberately **not** gated on the
+operation: the generated tool replaces that property with its own HITL-aware
+version, and a `displayOptions` rule naming `operation` would depend on a field
+the variant may not carry. Its default references `$tool.name` and
+`$tool.parameters`, which only resolve inside the generated tool; the operation
+falls back to evaluating them directly, so it also works when wired by hand.
 
 **Declare exactly one output.** n8n fires only the first output of a
 webhook-wait node ([n8n#12823](https://github.com/n8n-io/n8n/issues/12823)), so
@@ -236,10 +267,12 @@ reinstalling restores them.
 ## Gotchas
 
 - **Changing a node's `name`** orphans it in existing workflows. Treat
-  `jarvis`, `jarvisTrigger`, `jarvisNotification`, `jarvisProgress` and
-  `jarvisHumanReview` as permanent. This is why the legacy node was hidden
-  rather than deleted.
-- **`sendAndWait`** is load-bearing on `jarvisHumanReview`; see above.
+  `jarvis` and `jarvisTrigger` as permanent, and the same goes for the
+  operation values `sendProgress`, `notify` and `sendAndWait`.
+- **`sendAndWait`** is load-bearing; see above.
+- **Prefer an action over a node.** A new node type is a new thing users must
+  find and a new name that can never change. n8n's own integrations add
+  operations instead, and the picker lists them separately anyway.
 - **Renaming a parameter** silently loses its saved value. Add a new one and
   keep reading the old as a fallback if it matters.
 - **`displayName` vs `name`**: `displayName` is the label, `name` is the key
