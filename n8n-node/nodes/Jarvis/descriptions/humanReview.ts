@@ -7,38 +7,6 @@ import { SEND_AND_WAIT_OPERATION, type INodeProperties } from 'n8n-workflow';
  * properties live beside the HITL implementation rather than in the node file.
  */
 export const humanReviewDescription: INodeProperties[] = [
-	{
-		displayName: 'Approval Decided By',
-		name: 'approvalMode',
-		type: 'options',
-		default: 'agent',
-
-		description:
-			'Who decides whether this step needs approval. Fix it yourself for anything consequential: leaving it to the agent means the thing being policed also decides whether policing applies.',
-
-		options: [
-			{
-				name: 'The Agent',
-				value: 'agent',
-				description: 'The model decides per call, from what it is about to do',
-			},
-			{
-				name: 'Always Ask',
-				value: 'always',
-				description: 'Every call waits for the user to approve',
-			},
-			{
-				name: 'Never Ask, Just Inform',
-				value: 'never',
-				description: 'Every call tells the user what is happening and continues',
-			},
-		],
-
-		displayOptions: {
-			show: { operation: [SEND_AND_WAIT_OPERATION] },
-		},
-	},
-
 	/*
 	 * What the agent is asking for, decided per call rather than configured
 	 * once on the node.
@@ -63,10 +31,7 @@ export const humanReviewDescription: INodeProperties[] = [
 			'Whether to wait for the user to approve. When false the node only tells the user what is happening and continues immediately. Left as is, the agent decides per call.',
 
 		displayOptions: {
-			show: {
-				operation: [SEND_AND_WAIT_OPERATION],
-				approvalMode: ['agent'],
-			},
+			show: { operation: [SEND_AND_WAIT_OPERATION] },
 		},
 	},
 
