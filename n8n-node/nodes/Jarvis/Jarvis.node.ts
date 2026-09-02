@@ -127,21 +127,25 @@ export class Jarvis implements INodeType {
 					 * Keep your old operation if you still want to use
 					 * the Jarvis node directly in normal workflows.
 					 */
-					{
+					/*
+{
 						name: 'Ask for Approval',
 						value: 'LEGACY_ASK_APPROVAL',
 						description:
 							'Pause the workflow until the user answers in Jarvis',
 						action: 'Ask for approval',
 					},
+*/
 
-					{
+					/*
+{
 						name: 'Ask a Question',
 						value: 'LEGACY_ASK_QUESTION',
 						description:
 							'Pause the workflow and ask the user for text',
 						action: 'Ask a question',
 					},
+*/
 				],
 			},
 
