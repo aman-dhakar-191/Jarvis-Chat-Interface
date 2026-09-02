@@ -1,5 +1,4 @@
 import {
-	NodeOperationError,
 	WAIT_INDEFINITELY,
 	type IDataObject,
 	type IExecuteFunctions,
@@ -10,26 +9,33 @@ import {
 	type IWebhookResponseData,
 } from 'n8n-workflow';
 
-interface ApprovalOptions {
-	values?: {
-		approvalType?: 'single' | 'double';
-		approveLabel?: string;
-		disapproveLabel?: string;
-	};
-}
+import { getPushUrl, pushEvent } from './common/gateway';
+import { requireSession } from './common/helpers';
+import type { ApprovalOptions } from './common/types';
 
+/**
+ * DEPRECATED - superseded by the Jarvis Notification, Jarvis Progress and
+ * Jarvis Human Review nodes.
+ *
+ * It stays registered, keeps the node name `jarvis` and keeps every operation
+ * value so that workflows already saved with it - and the `jarvisHitlTool`
+ * n8n generates from its `sendAndWait` operation - keep loading and running.
+ * `hidden` only removes it from the node creator panel. Do not rename it, and
+ * do not add features here; add them to the focused nodes instead.
+ */
 export class Jarvis implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Jarvis',
+		displayName: 'Jarvis (Legacy)',
 		name: 'jarvis',
 		icon: 'file:jarvis.svg',
 		group: ['output'],
 		version: 1,
+		hidden: true,
 
 		subtitle: '={{$parameter["operation"]}}',
 
 		description:
-			'Send notifications and request human approval through the Jarvis chat app',
+			'Deprecated: use Jarvis Notification, Jarvis Progress or Jarvis Human Review instead',
 
 		defaults: {
 			name: 'Jarvis',
@@ -449,56 +455,10 @@ export class Jarvis implements INodeType {
 		) as string;
 
 		// ------------------------------------------------------------------
-		// Gateway credentials
+		// Gateway endpoint
 		// ------------------------------------------------------------------
 
-		const credentials = await this.getCredentials(
-			'jarvisGatewayApi',
-		);
-
-		const baseUrl = String(
-			credentials.baseUrl ?? '',
-		).replace(/\/+$/, '');
-
-		if (!baseUrl) {
-			throw new NodeOperationError(
-				this.getNode(),
-				'The Jarvis Gateway credential has no URL',
-			);
-		}
-
-		const pushUrl = `${baseUrl}/api/push`;
-
-		// ------------------------------------------------------------------
-		// Session helper
-		// ------------------------------------------------------------------
-
-		const requireSession = (
-			value: unknown,
-			itemIndex: number,
-		): string => {
-			const sessionId =
-				typeof value === 'string'
-					? value.trim()
-					: '';
-
-			if (!sessionId) {
-				throw new NodeOperationError(
-					this.getNode(),
-
-					'Session ID is empty, so the gateway cannot determine which Jarvis conversation should receive the event',
-
-					{
-						itemIndex,
-
-						description:
-							'Make sure the Jarvis sessionId is available. For sub-workflows use the sessionId supplied by the parent agent.',
-					},
-				);
-			}
-
-			return sessionId;
-		};
+		const pushUrl = await getPushUrl(this);
 
 		// ==================================================================
 		// SEND AND WAIT
@@ -511,6 +471,7 @@ export class Jarvis implements INodeType {
 
 		if (operation === 'sendAndWait') {
 			const sessionId = requireSession(
+				this,
 				this.getNodeParameter('sessionId', 0),
 				0,
 			);
@@ -593,49 +554,33 @@ export class Jarvis implements INodeType {
 			// Send approval request to Jarvis
 			// --------------------------------------------------------------
 
-			await this.helpers.httpRequestWithAuthentication.call(
-				this,
-				'jarvisGatewayApi',
-				{
-					method: 'POST',
+			await pushEvent(this, pushUrl, {
+				sessionId,
 
-					url: pushUrl,
+				event: 'approval.request',
 
-					body: {
-						sessionId,
+				resumeUrl,
 
-						event: 'approval.request',
+				content: message,
 
-						resumeUrl,
+				data: {
+					inputType: 'choice',
 
-						content: message,
+					choices,
 
-						data: {
-							inputType: 'choice',
+					/*
+					 * Useful for your Jarvis UI.
+					 */
+					approvalType,
 
-							choices,
+					toolName: this.evaluateExpression('{{ $tool.name }}', 0),
 
-							/*
-							 * Useful for your Jarvis UI.
-							 */
-							approvalType,
-
-							toolName: this.evaluateExpression(
-								'{{ $tool.name }}',
-								0,
-							),
-
-							toolParameters:
-								this.evaluateExpression(
-									'{{ JSON.stringify($tool.parameters) }}',
-									0,
-								),
-						},
-					},
-
-					json: true,
+					toolParameters: this.evaluateExpression(
+						'{{ JSON.stringify($tool.parameters) }}',
+						0,
+					),
 				},
-			);
+			});
 
 			// --------------------------------------------------------------
 			// Wait
@@ -702,10 +647,8 @@ export class Jarvis implements INodeType {
 			i++
 		) {
 			const sessionId = requireSession(
-				this.getNodeParameter(
-					'sessionId',
-					i,
-				),
+				this,
+				this.getNodeParameter('sessionId', i),
 				i,
 			);
 
@@ -737,24 +680,11 @@ export class Jarvis implements INodeType {
 			}
 
 			try {
-				const response =
-					(await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'jarvisGatewayApi',
-						{
-							method: 'POST',
-
-							url: pushUrl,
-
-							body: {
-								sessionId,
-								event,
-								content,
-							},
-
-							json: true,
-						},
-					)) as IDataObject;
+				const response = (await pushEvent(this, pushUrl, {
+					sessionId,
+					event,
+					content,
+				})) as IDataObject;
 
 				results.push({
 					json: response,

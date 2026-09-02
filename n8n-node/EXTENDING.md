@@ -1,9 +1,12 @@
-# Extending the Jarvis node
+# Extending the Jarvis nodes
 
-How to add operations, trigger nodes and credentials to this package later,
-and how to get the result back into your n8n.
+How to add nodes, trigger nodes and credentials to this package later, and how
+to get the result back into your n8n.
 
 ## Layout
+
+One directory per node, plus a `common/` directory for anything two of them
+would otherwise duplicate.
 
 ```text
 n8n-node/
@@ -11,12 +14,26 @@ n8n-node/
 ├── credentials/
 │   └── JarvisGatewayApi.credentials.ts
 ├── nodes/Jarvis/
-│   ├── Jarvis.node.ts              action node (3 operations)
-│   ├── JarvisTrigger.node.ts       trigger node
-│   ├── normalize.ts                shared payload logic
+│   ├── Trigger/
+│   │   ├── JarvisTrigger.node.ts   starts a workflow
+│   │   └── normalize.ts            gateway/Telegram payload → one shape
+│   ├── Notification/
+│   │   └── JarvisNotification.node.ts
+│   ├── Progress/
+│   │   └── JarvisProgress.node.ts
+│   ├── HumanReview/
+│   │   └── JarvisHumanReview.node.ts   parks and resumes an execution
+│   ├── common/
+│   │   ├── gateway.ts              getPushUrl() + pushEvent()
+│   │   ├── helpers.ts              requireSession()
+│   │   └── types.ts                JarvisEvent, ApprovalChoice, ApprovalRequest
+│   ├── Jarvis.node.ts              LEGACY, hidden, kept for saved workflows
 │   └── jarvis.svg                  icon, copied to dist by scripts/copy-icons.js
 └── test.js                         structural checks on the built package
 ```
+
+Nodes in a subdirectory reference the shared icon relatively, as
+`icon: 'file:../jarvis.svg'` — one icon file, not one per node.
 
 Anything new must be registered in `package.json`, or n8n will never see it:
 
@@ -25,62 +42,66 @@ Anything new must be registered in `package.json`, or n8n will never see it:
   "n8nNodesApiVersion": 1,
   "credentials": ["dist/credentials/JarvisGatewayApi.credentials.js"],
   "nodes": [
-    "dist/nodes/Jarvis/Jarvis.node.js",
-    "dist/nodes/Jarvis/JarvisTrigger.node.js"
+    "dist/nodes/Jarvis/Trigger/JarvisTrigger.node.js",
+    "dist/nodes/Jarvis/Notification/JarvisNotification.node.js",
+    "dist/nodes/Jarvis/Progress/JarvisProgress.node.js",
+    "dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js",
+    "dist/nodes/Jarvis/Jarvis.node.js"
   ]
 }
 ```
+
+## Talking to the gateway
+
+Never build the URL or the auth header in a node. `common/gateway.ts` owns both:
+
+```ts
+const pushUrl = await getPushUrl(this);          // once per execute()
+await pushEvent(this, pushUrl, { sessionId, event, content });
+```
+
+`pushEvent` goes through `httpRequestWithAuthentication` with the
+`jarvisGatewayApi` credential, so the `x-gateway-secret` header comes from the
+credential and never from a node parameter. Validate the session with
+`requireSession(this, value, itemIndex)` from `common/helpers.ts` so every node
+fails the same way on an empty `sessionId`.
 
 ## The three kinds of node
 
 | Kind | Implements | Use for |
 | --- | --- | --- |
-| **Action** | `execute()` | Doing something and returning data. `Jarvis` is one. |
+| **Action** | `execute()` | Doing something and returning data. `Jarvis Notification` and `Jarvis Progress` are ones. |
 | **Trigger (webhook)** | `webhook()`, `group: ['trigger']`, `inputs: []` | Starting a workflow when something arrives. `Jarvis Trigger` is one. |
-| **Action that waits** | `execute()` + `webhook()` + `restartWebhook` | Parking until a human answers. *Ask for Approval* is one. |
+| **Action that waits** | `execute()` + `webhook()` + `restartWebhook` | Parking until a human answers. `Jarvis Human Review` is one. |
 
 A trigger and a waiting action both declare a `webhook`, but they are not the
 same thing: only the waiting action sets `restartWebhook: true`, which is what
 makes n8n expose `$execution.resumeUrl` and resume a parked execution rather
 than start a new one.
 
-## Adding an operation to the existing node
+## Adding another action
 
-1. Add it to the `operation` options in `Jarvis.node.ts`:
+Add a node, not an operation. `Notification/JarvisNotification.node.ts` is the
+smallest complete template:
 
-   ```ts
-   {
-     name: 'Clear Chat',
-     value: 'clearChat',
-     description: 'Wipe the transcript shown on the device',
-     action: 'Clear chat',
-   },
-   ```
+1. Create `nodes/Jarvis/<Thing>/Jarvis<Thing>.node.ts` with a unique
+   `name` (`jarvisClearChat`), `icon: 'file:../jarvis.svg'`, and
+   `credentials: [{ name: 'jarvisGatewayApi', required: true }]`.
+2. Declare only the parameters that node needs — no `operation` field and no
+   `displayOptions` gymnastics.
+3. In `execute()`, loop over `this.getInputData()`, call `requireSession` and
+   `pushEvent`, set `pairedItem`, and honour `this.continueOnFail()`.
+4. Register the compiled path in `package.json`'s `n8n.nodes`.
+5. Add it to `test.js` — the existing checks assert every registered path
+   exists, that each description is complete, and that each node's icon
+   resolves from its own dist directory.
 
-2. Add any parameters it needs, gated on the operation:
-
-   ```ts
-   {
-     displayName: 'Confirm',
-     name: 'confirm',
-     type: 'boolean',
-     default: false,
-     displayOptions: { show: { operation: ['clearChat'] } },
-   },
-   ```
-
-3. Handle it in `execute()`, before the fire-and-forget loop.
-
-4. Extend `test.js` — the existing checks already assert that every
-   `displayOptions` rule names a real operation and that each operation can
-   reach the fields it needs, so a mistake here fails the build.
-
-`action` matters: it is what appears in the node picker's actions list, which is
-how the three current operations show up as separate entries.
+**Do not add operations to the legacy `Jarvis` node.** It is `hidden: true` and
+exists only so workflows saved before the split keep loading.
 
 ## Adding a trigger node
 
-Use `JarvisTrigger.node.ts` as the template. The essentials:
+Use `Trigger/JarvisTrigger.node.ts` as the template. The essentials:
 
 ```ts
 group: ['trigger'],
@@ -105,7 +126,7 @@ a `closeFunction` so n8n can tear the connection down.
 
 ## Adding a node that waits for a human
 
-Follow *Ask for Approval* in `Jarvis.node.ts`:
+Follow `HumanReview/JarvisHumanReview.node.ts`:
 
 ```ts
 webhooks: [{ name: 'default', httpMethod: 'POST',
@@ -121,7 +142,24 @@ return [items];
 ```
 
 Resuming re-enters through `webhook()`, whose `workflowData` becomes the node's
-output.
+output. Keep `group: ['output']` and `inputs: ['main']`: a waiting node is an
+action, and turning it into a trigger would start a new execution on every
+resume instead of continuing the parked one.
+
+### The AI Agent HITL tool
+
+n8n — not this package — generates the Human-in-the-Loop tool variant
+(`jarvisHumanReviewHitlTool`) that an AI Agent connects to. It does that by
+scanning node descriptions for an `operation` option whose value is exactly
+`sendAndWait`, and it carries over the `message` and `approvalOptions`
+properties onto the generated tool.
+
+So `JarvisHumanReview` keeps a one-option `operation` field even though it has
+only one job. Removing it, renaming it, or changing that value silently removes
+the node from the agent's tool list. The `message` default deliberately
+references `$tool.name` and `$tool.parameters`, which only resolve inside the
+generated tool; `execute()` falls back to evaluating them directly, so the node
+also works when wired by hand.
 
 **Declare exactly one output.** n8n fires only the first output of a
 webhook-wait node ([n8n#12823](https://github.com/n8n-io/n8n/issues/12823)), so
@@ -198,7 +236,10 @@ reinstalling restores them.
 ## Gotchas
 
 - **Changing a node's `name`** orphans it in existing workflows. Treat
-  `jarvis` and `jarvisTrigger` as permanent.
+  `jarvis`, `jarvisTrigger`, `jarvisNotification`, `jarvisProgress` and
+  `jarvisHumanReview` as permanent. This is why the legacy node was hidden
+  rather than deleted.
+- **`sendAndWait`** is load-bearing on `jarvisHumanReview`; see above.
 - **Renaming a parameter** silently loses its saved value. Add a new one and
   keep reading the old as a fallback if it matters.
 - **`displayName` vs `name`**: `displayName` is the label, `name` is the key
