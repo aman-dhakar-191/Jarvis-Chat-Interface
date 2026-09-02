@@ -1,16 +1,17 @@
-name: Deploy
+name: Deploy Jarvis
 
 on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 jobs:
 
-  # ==========================================
+  # ============================================================
   # GATEWAY
-  # ==========================================
+  # ============================================================
 
   deploy-gateway:
     name: Deploy Gateway
@@ -29,30 +30,55 @@ jobs:
           script: |
             set -e
 
-            echo "=== DEPLOYING GATEWAY ==="
+            echo "=========================================="
+            echo "        GATEWAY DEPLOYMENT"
+            echo "=========================================="
 
             cd /docker/jarvis/gateway
 
-            git pull
+            echo ""
+            echo "=== UPDATE SOURCE ==="
+
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
+
+            echo ""
+            echo "=== CURRENT COMMIT ==="
+
+            git rev-parse HEAD
+
+            echo ""
+            echo "=== BUILD & START GATEWAY ==="
 
             docker compose up -d --build
 
-            echo "=== WAITING FOR GATEWAY ==="
+            echo ""
+            echo "=== WAIT FOR GATEWAY ==="
 
             sleep 15
 
-            echo "=== GATEWAY HEALTH ==="
+            echo ""
+            echo "=== GATEWAY CONTAINER STATUS ==="
 
-            curl -fsS https://jarvis.srv1918051.hstgr.cloud/health
+            docker compose ps
+
+            echo ""
+            echo "=== GATEWAY HEALTH CHECK ==="
+
+            curl -fsS \
+              https://jarvis.srv1918051.hstgr.cloud/health
 
             echo ""
 
-            echo "=== GATEWAY DEPLOYMENT SUCCESSFUL ==="
+            echo "=========================================="
+            echo "     GATEWAY DEPLOYMENT SUCCESSFUL"
+            echo "=========================================="
 
 
-  # ==========================================
+  # ============================================================
   # N8N NODE
-  # ==========================================
+  # ============================================================
 
   deploy-n8n-node:
     name: Deploy n8n Node
@@ -72,13 +98,13 @@ jobs:
             set -e
 
             echo "=========================================="
-            echo "       n8n Node Deployment"
+            echo "        N8N NODE DEPLOYMENT"
             echo "=========================================="
 
             cd /docker/jarvis/n8n-node
 
             echo ""
-            echo "=== GIT UPDATE ==="
+            echo "=== UPDATE SOURCE ==="
 
             git fetch origin
             git checkout main
@@ -110,17 +136,22 @@ jobs:
 
             PKG=$(ls -t n8n-nodes-*.tgz | head -1)
 
+            if [ -z "$PKG" ]; then
+              echo "ERROR: Package was not created"
+              exit 1
+            fi
+
             echo "Package: $PKG"
 
             echo ""
-            echo "=== COPY TO N8N ==="
+            echo "=== COPY PACKAGE TO N8N ==="
 
             docker cp \
               "$PKG" \
               n8n-z44q-n8n-1:/tmp/"$PKG"
 
             echo ""
-            echo "=== INSTALL INTO N8N ==="
+            echo "=== INSTALL PACKAGE ==="
 
             docker exec \
               -u node \
@@ -134,24 +165,24 @@ jobs:
             docker restart n8n-z44q-n8n-1
 
             echo ""
-            echo "=== WAITING FOR N8N ==="
+            echo "=== WAIT FOR N8N ==="
 
             sleep 15
 
             echo ""
-            echo "=== N8N STATUS ==="
+            echo "=== N8N CONTAINER STATUS ==="
 
             STATUS=$(docker inspect -f '{{.State.Status}}' n8n-z44q-n8n-1)
 
             echo "n8n status: $STATUS"
 
             if [ "$STATUS" != "running" ]; then
-              echo "ERROR: n8n is not running"
+              echo "ERROR: n8n container is not running"
               exit 1
             fi
 
             echo ""
-            echo "=== INSTALLED VERSION ==="
+            echo "=== INSTALLED PACKAGE VERSION ==="
 
             INSTALLED_VERSION=$(docker exec \
               n8n-z44q-n8n-1 \
@@ -159,12 +190,17 @@ jobs:
 
             echo "Installed version: $INSTALLED_VERSION"
 
+            echo ""
+            echo "=== VERSION CHECK ==="
+
             if [ "$SOURCE_VERSION" != "$INSTALLED_VERSION" ]; then
               echo "ERROR: Version mismatch"
-              echo "Source: $SOURCE_VERSION"
+              echo "Source:    $SOURCE_VERSION"
               echo "Installed: $INSTALLED_VERSION"
               exit 1
             fi
+
+            echo "Version check: PASSED"
 
             echo ""
             echo "=== AVAILABLE ACTIONS ==="
@@ -198,5 +234,5 @@ jobs:
 
             echo ""
             echo "=========================================="
-            echo "       n8n NODE DEPLOYMENT SUCCESSFUL"
+            echo "     N8N NODE DEPLOYMENT SUCCESSFUL"
             echo "=========================================="
