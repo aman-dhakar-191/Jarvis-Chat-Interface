@@ -27,7 +27,7 @@ export class JarvisTrigger implements INodeType {
 				responseMode: '={{$parameter["responseMode"]}}',
 				// Only consulted when responseMode is lastNode: return the first item
 				// of the final node, which is the formatted reply.
-				responseData: 'firstEntryJson',
+				responseData: 'Working on it...',
 				// Without isFullPath, n8n prefixes the webhookId to the path and the
 				// webhook registers at /webhook/<uuid>/<path> instead of
 				// /webhook/<path>. n8n's own Webhook node sets this for the same reason.
