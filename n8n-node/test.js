@@ -90,22 +90,27 @@ check('all three operations exist on the one node', () => {
   }
 });
 
-check('only the two standalone actions reach the node creator', () => {
-  // useActionsGeneration.ts drops operations named '*', '' or ' ' from the
-  // Actions list, which is how sendAndWait stays in the description - and keeps
-  // generating the HITL tool - without being offered as a standalone action.
+check('every operation is offered in the node creator', () => {
+  // Naming an option '*', '' or ' ' would hide it from the Actions list
+  // (useActionsGeneration.ts filters those) - but that name is also what the
+  // Operation dropdown renders, so the node showed a bare '*'.
   const HIDDEN_FROM_ACTIONS = ['*', '', ' '];
-  const listed = operationOptions
-    .filter((o) => !HIDDEN_FROM_ACTIONS.includes(o.name))
-    .map((o) => o.value);
+  for (const option of operationOptions) {
+    assert.ok(
+      !HIDDEN_FROM_ACTIONS.includes(option.name),
+      `${option.value} has a name that renders as a broken Operation entry`,
+    );
+  }
+});
 
-  assert.deepEqual(listed, ['sendProgress', 'notify']);
-
-  const sendAndWait = operationOptions.find((o) => o.value === 'sendAndWait');
-  assert.ok(
-    HIDDEN_FROM_ACTIONS.includes(sendAndWait.name),
-    'sendAndWait would show up as a standalone action again',
-  );
+check('each progress stage says what it does to the status line', () => {
+  const stage = d.properties.find((p) => p.name === 'event');
+  for (const option of stage.options) {
+    assert.ok(option.description, `${option.value} has no description`);
+  }
+  // Only tool.finished clears; the rest replace. Without this the four stages
+  // are interchangeable and the dropdown means nothing.
+  assert.match(stage.options.find((o) => o.value === 'tool.finished').description, /[Cc]lears/);
 });
 
 check('every displayOptions rule names a real operation', () => {

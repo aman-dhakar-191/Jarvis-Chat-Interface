@@ -47,7 +47,8 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 | `execution.completed` | `{ messageId, durationMs? }` |
 | `execution.failed` | `{ messageId, code, message }` |
 | `notification` | `{ content, … }` — unprompted, no request needed |
-| `tool.started` / `tool.progress` / `tool.finished` / `execution.progress` | `{ content }` — transient status while Jarvis works |
+| `tool.started` / `tool.progress` / `execution.progress` | `{ content }` — transient status while Jarvis works; each replaces the last |
+| `tool.finished` | `{ content }` — the step is over; clears the status line |
 | `approval.request` | `{ approvalId, content, inputType: 'choice' \| 'text', choices?, placeholder? }` |
 | `approval.resolved` | `{ approvalId, choice, answer, by }` — also when another device answered |
 | `approval.expired` | `{ approvalId }` |

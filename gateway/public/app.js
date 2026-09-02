@@ -494,9 +494,16 @@ function handleEvent(event) {
     // Anything n8n pushes mid-run: which tool is running, what it found.
     case 'tool.started':
     case 'tool.progress':
-    case 'tool.finished':
     case 'execution.progress':
       state.progress = event.data.content || '';
+      render();
+      break;
+
+    // The step is over, so the status line describing it should go rather than
+    // sit there stale until the next update. Anything worth keeping after the
+    // step ends belongs in a notification, which writes a real message.
+    case 'tool.finished':
+      state.progress = '';
       render();
       break;
 

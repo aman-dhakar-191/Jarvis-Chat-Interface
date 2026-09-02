@@ -27,11 +27,25 @@ separate entries even though they are one node type.
 | --- | --- | --- |
 | **Send Progress** | Transient status line in the app while Jarvis works | No |
 | **Send Notification** | A chat bubble, even with nothing in flight | No |
+| **Send and Wait for Approval** | Buttons in the app; parks the execution until answered | **Yes** |
 
-There is a third operation, `sendAndWait`, which is deliberately **not** listed
-as an action: it is only meaningful under an AI Agent, so it is reached through
-the generated **Jarvis Human Review** tool rather than dropped onto a canvas by
-hand. See below.
+Under an AI Agent, reach the third one through the generated **Jarvis Human
+Review** tool rather than placing the node by hand - see below.
+
+### Progress stages
+
+A status line lives under the typing indicator, so it is only visible while a
+turn is in flight, and only one shows at a time.
+
+| Stage | Effect |
+| --- | --- |
+| **Tool Started** | Replaces the status line - "Searching your email…" |
+| **Tool Progress** | Replaces it again. Send as often as there is something new to say. |
+| **Tool Finished** | **Clears** it. The step is over. |
+| **Execution Progress** | Replaces it, for the run as a whole rather than one step. |
+
+Anything that should survive the run belongs in a **notification**, which writes
+a real message.
 
 All three POST to the gateway's `/api/push` with the credential's
 `x-gateway-secret` header:

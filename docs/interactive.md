@@ -87,7 +87,7 @@ device in the session. Add an **HTTP Request** node wherever you want to report:
 ```
 
 `event` may be `tool.started`, `tool.progress`, `tool.finished` or
-`execution.progress` — the client renders any of them as a status line under the
+`execution.progress`. All but `tool.finished` render as a status line under the
 typing indicator, replacing the previous one. It clears when the reply arrives.
 
 Fire-and-forget: the workflow does not wait, and a failed push never breaks the
