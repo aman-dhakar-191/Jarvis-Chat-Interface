@@ -7,6 +7,13 @@ on:
 
   workflow_dispatch:
 
+# Every SSH step below repeats the same connection block. GitHub Actions has no
+# YAML anchors and no step-level `with` defaults, so the repetition is the price
+# of not hiding the deploy behind a composite action.
+#
+# Each step is a SEPARATE SSH session: nothing carries over between them, so
+# every script re-enters its directory and re-derives any value it needs.
+
 jobs:
 
   # ============================================================
@@ -18,67 +25,62 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Gateway via SSH
+      - name: Update source
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT }}
-          # Default connect timeout is 30s, which is exactly where the dial gave
-          # up on 2026-09-02. Every script here is guarded by `set -e`, so the
-          # unsupported `script_stop` input it used to pass is not needed.
           timeout: 120s
-          command_timeout: 30m
-
+          command_timeout: 10m
           script: |
             set -e
-
-            echo "=========================================="
-            echo "        GATEWAY DEPLOYMENT"
-            echo "=========================================="
-
             cd /docker/jarvis/gateway
-
-            echo ""
-            echo "=== UPDATE SOURCE ==="
 
             git fetch origin
             git checkout main
             git reset --hard origin/main
 
-            echo ""
-            echo "=== CURRENT COMMIT ==="
+            echo "Commit: $(git rev-parse HEAD)"
 
-            git rev-parse HEAD
-
-            echo ""
-            echo "=== BUILD & START GATEWAY ==="
+      - name: Build and start gateway
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /docker/jarvis/gateway
 
             docker compose up -d --build
 
-            echo ""
-            echo "=== WAIT FOR GATEWAY ==="
+      - name: Container status
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /docker/jarvis/gateway
 
+            # The compose file's own healthcheck needs a moment after a rebuild.
             sleep 15
-
-            echo ""
-            echo "=== GATEWAY CONTAINER STATUS ==="
 
             docker compose ps
 
-            echo ""
-            echo "=== GATEWAY HEALTH CHECK ==="
-
-            curl -fsS \
-              https://jarvis.srv1918051.hstgr.cloud/health
-
-            echo ""
-
-            echo "=========================================="
-            echo "     GATEWAY DEPLOYMENT SUCCESSFUL"
-            echo "=========================================="
-
+      # Public endpoint, so this needs no SSH session - and checking it from
+      # outside the box is a stronger signal than checking it from inside.
+      - name: Health check
+        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://jarvis.srv1918051.hstgr.cloud/health
 
   # ============================================================
   # N8N NODE
@@ -93,194 +95,199 @@ jobs:
     # and the gateway one, which passed in the run where this timed out.
     needs: deploy-gateway
 
+    env:
+      N8N: n8n-z44q-n8n-1
+
     steps:
-      - name: Deploy n8n Node via SSH
+      - name: Update source
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT }}
-          # Default connect timeout is 30s, which is exactly where the dial gave
-          # up on 2026-09-02. Every script here is guarded by `set -e`, so the
-          # unsupported `script_stop` input it used to pass is not needed.
           timeout: 120s
-          command_timeout: 30m
-
+          command_timeout: 10m
           script: |
             set -e
-
-            echo "=========================================="
-            echo "        N8N NODE DEPLOYMENT"
-            echo "=========================================="
-
             cd /docker/jarvis/n8n-node
-
-            echo ""
-            echo "=== UPDATE SOURCE ==="
 
             git fetch origin
             git checkout main
             git reset --hard origin/main
 
-            echo ""
-            echo "=== CURRENT COMMIT ==="
+            echo "Commit:  $(git rev-parse HEAD)"
+            echo "Version: $(node -p 'require("./package.json").version')"
 
-            git rev-parse HEAD
+      - name: Build and pack
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /docker/jarvis/n8n-node
 
-            echo ""
-            echo "=== SOURCE VERSION ==="
+            # Stale tarballs would make `ls -t | head -1` ambiguous in the next
+            # step, which picks the package by mtime.
+            rm -f n8n-nodes-*.tgz
 
-            SOURCE_VERSION=$(grep -m1 '"version"' package.json | sed -E 's/.*"version": "([^"]+)".*/\1/')
-
-            echo "Source version: $SOURCE_VERSION"
-
-            echo ""
-            echo "=== BUILD & PACKAGE ==="
-
+            # npm test builds and then runs the structural checks, so a broken
+            # node fails here rather than inside n8n after the restart.
             docker run --rm \
               -v "$PWD":/app \
               -w /app \
               node:22 \
-              bash -c 'npm install && npm run build && npm pack'
+              bash -c 'npm install && npm test && npm pack'
 
-            echo ""
-            echo "=== PACKAGE ==="
+            ls -l n8n-nodes-*.tgz
+
+      - name: Install package into n8n
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 15m
+          script: |
+            set -e
+            cd /docker/jarvis/n8n-node
 
             PKG=$(ls -t n8n-nodes-*.tgz | head -1)
 
             if [ -z "$PKG" ]; then
-              echo "ERROR: Package was not created"
+              echo "ERROR: Build and pack produced no tarball"
               exit 1
             fi
 
             echo "Package: $PKG"
 
-            echo ""
-            echo "=== COPY PACKAGE TO N8N ==="
-
-            docker cp \
-              "$PKG" \
-              n8n-z44q-n8n-1:/tmp/"$PKG"
-
-            echo ""
-            echo "=== INSTALL PACKAGE ==="
+            docker cp "$PKG" ${{ env.N8N }}:/tmp/"$PKG"
 
             docker exec \
               -u node \
               -w /home/node/.n8n/nodes \
-              n8n-z44q-n8n-1 \
+              ${{ env.N8N }} \
               npm install --save /tmp/"$PKG"
 
-            echo ""
-            echo "=== RESTART N8N ==="
+      - name: Restart n8n
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 10m
+          script: |
+            set -e
 
-            docker restart n8n-z44q-n8n-1
+            docker restart ${{ env.N8N }}
 
-            echo ""
-            echo "=== WAIT FOR N8N ==="
-
+            # n8n registers community nodes at startup, so give it time to come
+            # up before anything inspects the container.
             sleep 15
 
-            echo ""
-            echo "=== N8N CONTAINER STATUS ==="
-
-            STATUS=$(docker inspect -f '{{.State.Status}}' n8n-z44q-n8n-1)
-
+            STATUS=$(docker inspect -f '{{.State.Status}}' ${{ env.N8N }})
             echo "n8n status: $STATUS"
 
             if [ "$STATUS" != "running" ]; then
               echo "ERROR: n8n container is not running"
+              docker logs --tail 50 ${{ env.N8N }}
               exit 1
             fi
 
-            echo ""
-            echo "=== INSTALLED PACKAGE VERSION ==="
+      - name: Verify installed version
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /docker/jarvis/n8n-node
 
-            INSTALLED_VERSION=$(docker exec \
-              n8n-z44q-n8n-1 \
+            # Both sides are re-derived here: a separate SSH session cannot see
+            # a variable set by an earlier step.
+            SOURCE_VERSION=$(node -p 'require("./package.json").version')
+
+            INSTALLED_VERSION=$(docker exec ${{ env.N8N }} \
               node -p 'require("/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis/package.json").version')
 
-            echo "Installed version: $INSTALLED_VERSION"
-
-            echo ""
-            echo "=== VERSION CHECK ==="
+            echo "Source:    $SOURCE_VERSION"
+            echo "Installed: $INSTALLED_VERSION"
 
             if [ "$SOURCE_VERSION" != "$INSTALLED_VERSION" ]; then
-              echo "ERROR: Version mismatch"
-              echo "Source:    $SOURCE_VERSION"
-              echo "Installed: $INSTALLED_VERSION"
+              echo "ERROR: Version mismatch. npm will not replace an installed"
+              echo "package with an identical version - bump the version."
               exit 1
             fi
 
             echo "Version check: PASSED"
 
-            echo ""
-            echo "=== REGISTERED NODES ==="
+      - name: Verify registered nodes
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: 5m
+          script: |
+            set -e
 
-            docker exec \
-              n8n-z44q-n8n-1 \
-              node -e '
-                const root =
-                  "/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis";
+            docker exec ${{ env.N8N }} node -e '
+              const root = "/home/node/.n8n/nodes/node_modules/n8n-nodes-jarvis";
+              const pkg = require(`${root}/package.json`);
 
-                const pkg = require(`${root}/package.json`);
+              // Verify what n8n will actually load: every path in the n8n
+              // manifest, not one hard-coded node file.
+              const expected = [
+                "jarvisTrigger",
+                "jarvisNotification",
+                "jarvisProgress",
+                "jarvisHumanReview",
+                "jarvis",
+              ];
 
-                // Verify what n8n will actually load: every path in the n8n
-                // manifest, not one hard-coded node file.
-                const expected = [
-                  "jarvisTrigger",
-                  "jarvisNotification",
-                  "jarvisProgress",
-                  "jarvisHumanReview",
-                  "jarvis",
-                ];
+              const found = [];
 
-                const found = [];
+              for (const rel of pkg.n8n.nodes) {
+                const [Node] = Object.values(require(`${root}/${rel}`));
+                const d = new Node().description;
 
-                for (const rel of pkg.n8n.nodes) {
-                  const exported = require(`${root}/${rel}`);
-                  const [Node] = Object.values(exported);
-                  const d = new Node().description;
+                found.push(d.name);
+                console.log(`- ${d.displayName} (${d.name})` + (d.hidden ? " [hidden/legacy]" : ""));
+              }
 
-                  found.push(d.name);
+              const missing = expected.filter(n => !found.includes(n));
 
-                  console.log(
-                    `- ${d.displayName} (${d.name})` +
-                      (d.hidden ? " [hidden/legacy]" : "")
-                  );
-                }
+              if (missing.length) {
+                console.error(`ERROR: not registered: ${missing.join(", ")}`);
+                process.exit(1);
+              }
 
-                const missing = expected.filter(n => !found.includes(n));
+              // The AI Agent only gets a Human Review tool while this
+              // operation value survives on the node.
+              const hr = require(`${root}/dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js`);
 
-                if (missing.length) {
-                  console.error(
-                    `ERROR: not registered: ${missing.join(", ")}`
-                  );
-                  process.exit(1);
-                }
+              const operation = new hr.JarvisHumanReview()
+                .description.properties.find(p => p.name === "operation");
 
-                // The AI Agent only gets a Human Review tool while this
-                // operation value survives on the node.
-                const hr = require(
-                  `${root}/dist/nodes/Jarvis/HumanReview/JarvisHumanReview.node.js`
-                );
+              if (!operation?.options?.some(o => o.value === "sendAndWait")) {
+                console.error("ERROR: Human Review lost its sendAndWait operation, so n8n will not generate its HITL tool");
+                process.exit(1);
+              }
 
-                const operation = new hr.JarvisHumanReview()
-                  .description.properties.find(p => p.name === "operation");
-
-                if (!operation?.options?.some(o => o.value === "sendAndWait")) {
-                  console.error(
-                    "ERROR: Human Review lost its sendAndWait operation, so " +
-                      "n8n will not generate its HITL tool"
-                  );
-                  process.exit(1);
-                }
-
-                console.log("HITL tool operation: present");
-              '
-
-            echo ""
-            echo "=========================================="
-            echo "     N8N NODE DEPLOYMENT SUCCESSFUL"
-            echo "=========================================="
+              console.log("HITL tool operation: present");
+            '
