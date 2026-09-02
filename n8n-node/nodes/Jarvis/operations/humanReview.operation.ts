@@ -95,19 +95,26 @@ export async function execute(
 		 * Returning the gateway's own {ok, delivered} instead carries no
 		 * approval, and the gated tool never runs.
 		 */
-		return [
-			[
-				{
-					json: approvalResult({
-						approved: true,
-						informed: true,
-						delivered: response.delivered ?? null,
-						respondedAt: new Date().toISOString(),
-					}),
-					pairedItem: { item: 0 },
-				},
-			],
-		];
+		/*
+		 * Only claim a paired item when one actually arrived. Under an agent this
+		 * operation can run with no input items, and pointing at item 0 of an
+		 * empty input leaves a dangling link that breaks `.item` lookups
+		 * elsewhere - which surfaces as "Can't get data for expression".
+		 */
+		const informed: INodeExecutionData = {
+			json: approvalResult({
+				approved: true,
+				informed: true,
+				delivered: response.delivered ?? null,
+				respondedAt: new Date().toISOString(),
+			}),
+		};
+
+		if (items.length > 0) {
+			informed.pairedItem = { item: 0 };
+		}
+
+		return [[informed]];
 	}
 
 	// ------------------------------------------------------------------
