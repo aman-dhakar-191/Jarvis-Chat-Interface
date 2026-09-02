@@ -8,6 +8,34 @@ import { SEND_AND_WAIT_OPERATION, type INodeProperties } from 'n8n-workflow';
  */
 export const humanReviewDescription: INodeProperties[] = [
 	/*
+	 * What the agent is asking for, decided per call rather than configured
+	 * once on the node.
+	 *
+	 * `$fromAI` makes the LLM fill this in when it invokes the tool, so one
+	 * Human Review tool covers both jobs: telling the user what it is about to
+	 * do (reading mail, searching the web - nothing to approve) and asking
+	 * permission for something consequential (sending that mail).
+	 *
+	 * The description is the prompt the model actually sees, so it is written
+	 * for the model, not for the node's UI.
+	 */
+	{
+		displayName: 'Approval Required',
+		name: 'approvalRequired',
+		type: 'boolean',
+
+		default:
+			"={{ $fromAI('approvalRequired', 'Whether this step needs the user to approve it before it happens. Use false to simply tell the user what you are doing when the step only reads or looks something up, such as searching the web or reading emails. Use true when the step changes, sends, deletes or spends something, such as sending an email or a message.', 'boolean') }}",
+
+		description:
+			'Whether to wait for the user to approve. When false the node only tells the user what is happening and continues immediately. Left as is, the agent decides per call.',
+
+		displayOptions: {
+			show: { operation: [SEND_AND_WAIT_OPERATION] },
+		},
+	},
+
+	/*
 	 * n8n's HITL generator looks specifically for a property called
 	 * `approvalOptions` and preserves it on the generated tool.
 	 */

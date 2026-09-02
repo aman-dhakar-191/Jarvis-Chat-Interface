@@ -43,6 +43,39 @@ export async function execute(
 	const message = this.getNodeParameter('message', 0) as string;
 
 	// ------------------------------------------------------------------
+	// Inform, or ask?
+	// ------------------------------------------------------------------
+
+	/*
+	 * Normally answered by the agent through $fromAI. Outside a tool context
+	 * that expression cannot resolve and getNodeParameter throws, so fall back
+	 * to asking: failing to work out whether something needs approval must
+	 * never be the same as deciding it does not.
+	 */
+	let approvalRequired = true;
+
+	try {
+		approvalRequired = this.getNodeParameter('approvalRequired', 0, true) as boolean;
+	} catch {
+		approvalRequired = true;
+	}
+
+	if (!approvalRequired) {
+		/*
+		 * Nothing to approve: tell the user what is happening and let the agent
+		 * carry on. No resume URL, no parked execution, so the gateway sees an
+		 * ordinary notification.
+		 */
+		const response = await pushEvent(this, pushUrl, {
+			sessionId,
+			event: 'notification',
+			content: message,
+		});
+
+		return [[{ json: response, pairedItem: { item: 0 } }]];
+	}
+
+	// ------------------------------------------------------------------
 	// Approval options
 	// ------------------------------------------------------------------
 

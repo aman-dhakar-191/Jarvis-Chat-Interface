@@ -27,7 +27,11 @@ separate entries even though they are one node type.
 | --- | --- | --- |
 | **Send Progress** | Transient status line in the app while Jarvis works | No |
 | **Send Notification** | A chat bubble, even with nothing in flight | No |
-| **Send and Wait for Approval** | Buttons in the app; parks the execution until answered | **Yes** |
+
+There is a third operation, `sendAndWait`, which is deliberately **not** listed
+as an action: it is only meaningful under an AI Agent, so it is reached through
+the generated **Jarvis Human Review** tool rather than dropped onto a canvas by
+hand. See below.
 
 All three POST to the gateway's `/api/push` with the credential's
 `x-gateway-secret` header:
@@ -56,11 +60,30 @@ All three POST to the gateway's `/api/push` with the credential's
 }
 ```
 
-## Send and Wait for Approval
+## Human Review
 
-This action parks the execution itself - no separate Wait node. It sends n8n's
-`$execution.resumeUrl` to the gateway, which **stores it server-side and never
-sends it to a browser**; the app only ever sees an opaque `approvalId`.
+Connect the tool n8n generates from this node (`jarvisHitlTool`, shown as
+**Jarvis - Request human approval for tools**) to an AI Agent. It does two jobs,
+and **the agent picks which one per call**:
+
+| The agent is about to… | Approval Required | What happens |
+| --- | --- | --- |
+| read or look something up - search the web, read email | `false` | The user is told what is happening. Nothing to approve, so the agent continues immediately. |
+| change, send, delete or spend something - send that email | `true` | Buttons in the app; the execution parks until the user answers. |
+
+That choice is the `Approval Required` field, whose default is a `$fromAI()`
+call, so the model fills it in when it invokes the tool. Replace the expression
+with a fixed `true`/`false` to take the decision away from the agent.
+
+If the value cannot be resolved - the node used outside a tool context, where
+`$fromAI` has nothing to resolve against - it falls back to **asking**. Failing
+to work out whether something needs approval must never be the same as deciding
+it does not.
+
+When approval *is* required, the node parks the execution itself - no separate
+Wait node. It sends n8n's `$execution.resumeUrl` to the gateway, which **stores
+it server-side and never sends it to a browser**; the app only ever sees an
+opaque `approvalId`.
 
 ```text
 AI Agent
@@ -76,10 +99,9 @@ webhook() → workflowData     ← the approval payload becomes the node's outpu
 AI Agent continues
 ```
 
-Under an **AI Agent**, connect the tool variant n8n generates from this node
-(`jarvisHitlTool`, shown as a Human Review tool) rather than the node itself.
-n8n generates it by detecting the `sendAndWait` operation value - do not
-rename or remove that operation.
+n8n generates that tool by detecting the `sendAndWait` operation value - do not
+rename or remove the operation, and note that hiding it from the Actions list
+is done by naming it `*`, not by deleting it.
 
 Output after resuming:
 
