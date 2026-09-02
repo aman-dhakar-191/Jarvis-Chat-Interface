@@ -152,6 +152,12 @@ check('progress keeps the stages the Jarvis client renders', () => {
 
 // ---- human review: the HITL contract ------------------------------------
 
+check('the node can be called by an agent as a tool', () => {
+  // Generates `jarvisTool`, the only way to push progress from inside an
+  // agent's loop: canvas nodes cannot sit between an agent's tool calls.
+  assert.equal(d.usableAsTool, true);
+});
+
 check('the sendAndWait value n8n generates its HITL tool from is intact', () => {
   const { SEND_AND_WAIT_OPERATION } = require('n8n-workflow');
   assert.equal(SEND_AND_WAIT_OPERATION, 'sendAndWait');

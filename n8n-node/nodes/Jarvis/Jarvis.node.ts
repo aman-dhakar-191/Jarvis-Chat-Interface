@@ -46,6 +46,21 @@ export class Jarvis implements INodeType {
 		},
 
 		/*
+		 * Makes n8n generate `jarvisTool`, so an AI Agent can call this node
+		 * from inside its own loop.
+		 *
+		 * Without it, progress can only be pushed from the canvas - which means
+		 * before and after the agent node, never between its tool calls, since
+		 * those happen inside the agent and are not sequenced on the canvas.
+		 * With it, the agent can narrate its own work as it goes.
+		 *
+		 * Safe alongside the HITL variant: createAiTools runs before
+		 * createHitlTools, and hasSendAndWaitOperation skips any node whose name
+		 * ends in `Tool`, so no `jarvisToolHitlTool` is generated.
+		 */
+		usableAsTool: true,
+
+		/*
 		 * IMPORTANT:
 		 *
 		 * Keep this as a normal `main` node. n8n generates
