@@ -75,11 +75,12 @@ export async function execute(
 		const answer = this.getNodeParameter('approvalRequired', 0, true);
 
 		/*
-		 * An unconfigured field arrives as '', which is falsy - and treating
-		 * that as "no approval needed" means a gate nobody finished setting up
-		 * silently never gates. Only an explicit false skips the approval.
+		 * Only an explicit yes asks. n8n renders an empty stored value - left
+		 * behind by the old expression default - as a toggle in the off
+		 * position, so anything that is not a real true must behave as off.
+		 * Contradicting the toggle the user is looking at is its own bug.
 		 */
-		approvalRequired = !(answer === false || answer === 'false');
+		approvalRequired = answer === true || answer === 'true';
 	} catch {
 		approvalRequired = true;
 	}

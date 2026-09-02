@@ -90,10 +90,17 @@ That choice is the `Approval Required` field, whose default is a `$fromAI()`
 call, so the model fills it in when it invokes the tool. Replace the expression
 with a fixed `true`/`false` to take the decision away from the agent.
 
-Only an explicit `false` skips the approval. An unset field - which arrives as
-an empty string - falls back to **asking**, as does a value that cannot be
-resolved (the node used outside a tool context, where `$fromAI` has nothing to
-bind to). A gate nobody finished configuring must not silently stop gating.
+`Approval Required` is a plain boolean, on by default: this operation exists to
+ask. Turn it off to only inform. Only a real `true` asks, so a toggle showing
+off always behaves as off - n8n stores an empty value for a field left over from
+an older expression default and renders that as off, and the node must not
+disagree with the toggle you are looking at.
+
+**Do not put an approval inside a sub-workflow that a parent calls as a tool.**
+Waiting parks the sub-workflow, and the parent's tool call fails immediately
+with *"The workflow did not return a response"* while the sub-workflow sits
+waiting for an answer nobody is coming to give. Gate at the top level, where the
+execution that parks is the one the user is talking to.
 
 The node deliberately declares **no** `toolName` or `toolParameters` parameter.
 `toolParameters` is the key n8n uses when it merges the gated tool's arguments

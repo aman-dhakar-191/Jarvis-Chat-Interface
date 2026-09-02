@@ -179,14 +179,14 @@ check('no property collides with the keys n8n uses for the gated tool call', () 
   }
 });
 
-check('the agent decides whether a call needs approval', () => {
+check('approval defaults to asking, as a real boolean', () => {
   const prop = d.properties.find((p) => p.name === 'approvalRequired');
   assert.equal(prop.type, 'boolean');
+  // A real boolean, not an expression: an expression default leaves '' behind
+  // once the sparkle override is removed, and n8n renders '' as a toggle in the
+  // off position while the value is not actually false.
+  assert.equal(prop.default, true);
   assert.deepEqual(prop.displayOptions.show.operation, ['sendAndWait']);
-  // The agent fills this per call; a plain default would freeze the decision.
-  assert.match(prop.default, /\$fromAI\(/);
-  assert.match(prop.default, /'approvalRequired'/);
-  assert.match(prop.default, /'boolean'/);
 });
 
 check('the approvalOptions collection n8n carries onto the tool is intact', () => {

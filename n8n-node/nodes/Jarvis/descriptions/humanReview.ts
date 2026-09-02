@@ -24,11 +24,23 @@ export const humanReviewDescription: INodeProperties[] = [
 		name: 'approvalRequired',
 		type: 'boolean',
 
-		default:
-			"={{ $fromAI('approvalRequired', 'Whether this step needs the user to approve it before it happens. Use false to simply tell the user what you are doing when the step only reads or looks something up, such as searching the web or reading emails. Use true when the step changes, sends, deletes or spends something, such as sending an email or a message.', 'boolean') }}",
+		/*
+		 * A real boolean, not an expression. It was previously defaulted to a
+		 * `$fromAI()` string, which left the stored value as '' once the
+		 * override was removed - and n8n renders '' as a toggle in the off
+		 * position while the value is not actually `false`. A node whose
+		 * behaviour disagrees with the toggle the user is looking at is worse
+		 * than either behaviour on its own.
+		 *
+		 * On by default because this operation exists to ask. Turn it off to
+		 * only inform, or use the sparkle override to let the agent decide per
+		 * call - that override is n8n's own, and carries its own description
+		 * for the model.
+		 */
+		default: true,
 
 		description:
-			'Whether to wait for the user to approve. When false the node only tells the user what is happening and continues immediately. Left as is, the agent decides per call.',
+			'Whether to wait for the user to approve. Turn off to simply tell the user what is happening and continue - right for a step that only reads or looks something up. Use the sparkle override to let the agent decide per call, describing to it that false is for read-only steps and true for anything that changes, sends, deletes or spends.',
 
 		displayOptions: {
 			show: { operation: [SEND_AND_WAIT_OPERATION] },
