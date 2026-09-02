@@ -10,11 +10,6 @@ import {
 	type IWebhookResponseData,
 } from 'n8n-workflow';
 
-interface ChoiceRow {
-	value: string;
-	label: string;
-}
-
 interface ApprovalOptions {
 	values?: {
 		approvalType?: 'single' | 'double';
@@ -135,7 +130,7 @@ export class Jarvis implements INodeType {
 					/*
 {
 						name: 'Ask for Approval',
-						value: 'askApproval',
+						value: 'LEGACY_ASK_APPROVAL',
 						description:
 							'Pause the workflow until the user answers in Jarvis',
 						action: 'Ask for approval',
@@ -145,7 +140,7 @@ export class Jarvis implements INodeType {
 					/*
 {
 						name: 'Ask a Question',
-						value: 'askQuestion',
+						value: 'LEGACY_ASK_QUESTION',
 						description:
 							'Pause the workflow and ask the user for text',
 						action: 'Ask a question',
@@ -275,123 +270,6 @@ export class Jarvis implements INodeType {
 			},
 
 			// ================================================================
-			// OLD ASK APPROVAL
-			// ================================================================
-
-			{
-				displayName: 'Question',
-				name: 'content',
-				type: 'string',
-
-				typeOptions: {
-					rows: 2,
-				},
-
-				default: '',
-
-				placeholder:
-					'Send the follow-up email to the client?',
-
-				displayOptions: {
-					show: {
-						operation: ['askApproval'],
-					},
-				},
-			},
-
-			// ================================================================
-			// OLD CUSTOM CHOICES
-			// ================================================================
-
-			{
-				displayName: 'Choices',
-				name: 'choices',
-				type: 'fixedCollection',
-
-				typeOptions: {
-					multipleValues: true,
-					sortable: true,
-				},
-
-				default: {},
-
-				placeholder: 'Add Choice',
-
-				description:
-					'Custom approval buttons. Leave empty for Approve and Reject.',
-
-				displayOptions: {
-					show: {
-						operation: ['askApproval'],
-					},
-				},
-
-				options: [
-					{
-						name: 'choice',
-						displayName: 'Choice',
-
-						values: [
-							{
-								displayName: 'Label',
-								name: 'label',
-								type: 'string',
-								default: '',
-								placeholder: 'Approve',
-							},
-
-							{
-								displayName: 'Value',
-								name: 'value',
-								type: 'string',
-								default: '',
-								placeholder: 'approve',
-							},
-						],
-					},
-				],
-			},
-
-			// ================================================================
-			// QUESTION
-			// ================================================================
-
-			{
-				displayName: 'Question',
-				name: 'question',
-				type: 'string',
-
-				typeOptions: {
-					rows: 2,
-				},
-
-				default: '',
-
-				placeholder:
-					'Which repository should I open the PR against?',
-
-				displayOptions: {
-					show: {
-						operation: ['askQuestion'],
-					},
-				},
-			},
-
-			{
-				displayName: 'Placeholder',
-				name: 'placeholder',
-				type: 'string',
-				default: '',
-				placeholder: 'owner/repo',
-
-				displayOptions: {
-					show: {
-						operation: ['askQuestion'],
-					},
-				},
-			},
-
-			// ================================================================
 			// N8N HITL APPROVAL OPTIONS
 			// ================================================================
 
@@ -487,7 +365,7 @@ export class Jarvis implements INodeType {
 
 				displayOptions: {
 					show: {
-						operation: ['sendAndWait', 'askApproval', 'askQuestion'],
+						operation: ['sendAndWait'],
 					},
 				},
 			},
@@ -505,11 +383,7 @@ export class Jarvis implements INodeType {
 
 				displayOptions: {
 					show: {
-						operation: [
-							'sendAndWait',
-							'askApproval',
-							'askQuestion',
-						],
+						operation: ['sendAndWait'],
 
 						limitWaitTime: [true],
 					},
@@ -540,11 +414,7 @@ export class Jarvis implements INodeType {
 
 				displayOptions: {
 					show: {
-						operation: [
-							'sendAndWait',
-							'askApproval',
-							'askQuestion',
-						],
+						operation: ['sendAndWait'],
 
 						limitWaitTime: [true],
 					},
@@ -842,254 +712,6 @@ export class Jarvis implements INodeType {
 			 */
 			return [items];
 		}
-
-		// ==================================================================
-		// OLD ASK APPROVAL
-		// ==================================================================
-
-		/*
-if (operation === 'askApproval') {
-			const sessionId = requireSession(
-				this.getNodeParameter('sessionId', 0),
-				0,
-			);
-
-			const content =
-				this.getNodeParameter(
-					'content',
-					0,
-				) as string;
-
-			const rows =
-				(this.getNodeParameter(
-					'choices.choice',
-					0,
-					[],
-				) as ChoiceRow[]) ?? [];
-
-			const choices = rows
-				.filter(
-					(row) =>
-						row.value ||
-						row.label,
-				)
-				.map((row) => ({
-					value:
-						row.value ||
-						row.label,
-
-					label:
-						row.label ||
-						row.value,
-				}));
-
-			const finalChoices =
-				choices.length
-					? choices
-					: [
-							{
-								value: 'approve',
-								label: 'Approve',
-							},
-							{
-								value: 'reject',
-								label: 'Reject',
-							},
-						];
-
-			const resumeUrl =
-				this.evaluateExpression(
-					'{{ $execution.resumeUrl }}',
-					0,
-				) as string;
-
-			this.setMetadata({
-				resumeUrl,
-			});
-
-			await this.helpers.httpRequestWithAuthentication.call(
-				this,
-				'jarvisGatewayApi',
-				{
-					method: 'POST',
-
-					url: pushUrl,
-
-					body: {
-						sessionId,
-
-						event: 'approval.request',
-
-						resumeUrl,
-
-						content,
-
-						data: {
-							inputType: 'choice',
-							choices: finalChoices,
-						},
-					},
-
-					json: true,
-				},
-			);
-
-			let waitTill = WAIT_INDEFINITELY;
-
-			if (
-				this.getNodeParameter(
-					'limitWaitTime',
-					0,
-					true,
-				) as boolean
-			) {
-				const amount =
-					this.getNodeParameter(
-						'resumeAmount',
-						0,
-						1,
-					) as number;
-
-				const unit =
-					this.getNodeParameter(
-						'resumeUnit',
-						0,
-						'hours',
-					) as string;
-
-				const perUnit: Record<
-					string,
-					number
-				> = {
-					minutes: 60_000,
-					hours: 3_600_000,
-					days: 86_400_000,
-				};
-
-				waitTill = new Date(
-					Date.now() +
-						amount *
-							(perUnit[unit] ??
-								perUnit.hours),
-				);
-			}
-
-			await this.putExecutionToWait(
-				waitTill,
-			);
-
-			return [items];
-		}
-*/
-
-		// ==================================================================
-		// ASK QUESTION
-		// ==================================================================
-
-		/*
-if (operation === 'askQuestion') {
-			const sessionId = requireSession(
-				this.getNodeParameter('sessionId', 0),
-				0,
-			);
-
-			const content =
-				this.getNodeParameter(
-					'question',
-					0,
-				) as string;
-
-			const placeholder =
-				this.getNodeParameter(
-					'placeholder',
-					0,
-					'',
-				) as string;
-
-			const resumeUrl =
-				this.evaluateExpression(
-					'{{ $execution.resumeUrl }}',
-					0,
-				) as string;
-
-			this.setMetadata({
-				resumeUrl,
-			});
-
-			await this.helpers.httpRequestWithAuthentication.call(
-				this,
-				'jarvisGatewayApi',
-				{
-					method: 'POST',
-
-					url: pushUrl,
-
-					body: {
-						sessionId,
-
-						event: 'approval.request',
-
-						resumeUrl,
-
-						content,
-
-						data: {
-							inputType: 'text',
-							placeholder,
-						},
-					},
-
-					json: true,
-				},
-			);
-
-			let waitTill = WAIT_INDEFINITELY;
-
-			if (
-				this.getNodeParameter(
-					'limitWaitTime',
-					0,
-					true,
-				) as boolean
-			) {
-				const amount =
-					this.getNodeParameter(
-						'resumeAmount',
-						0,
-						1,
-					) as number;
-
-				const unit =
-					this.getNodeParameter(
-						'resumeUnit',
-						0,
-						'hours',
-					) as string;
-
-				const perUnit: Record<
-					string,
-					number
-				> = {
-					minutes: 60_000,
-					hours: 3_600_000,
-					days: 86_400_000,
-				};
-
-				waitTill = new Date(
-					Date.now() +
-						amount *
-							(perUnit[unit] ??
-								perUnit.hours),
-				);
-			}
-
-			await this.putExecutionToWait(
-				waitTill,
-			);
-
-			return [items];
-		}
-*/
 
 		// ==================================================================
 		// NORMAL NOTIFICATION / PROGRESS
