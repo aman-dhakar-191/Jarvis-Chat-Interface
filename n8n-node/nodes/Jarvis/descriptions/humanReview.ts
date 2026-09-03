@@ -48,6 +48,32 @@ export const humanReviewDescription: INodeProperties[] = [
 	},
 
 	/*
+	 * The tool the agent is asking about, sent as data so the client can label
+	 * the message with it.
+	 *
+	 * It must be a PARAMETER, not an evaluateExpression() call in execute():
+	 * n8n injects $tool when it resolves a node's parameters for a tool call,
+	 * and reading it from code instead yields nothing.
+	 *
+	 * There is deliberately no `toolParameters` counterpart. That name is the
+	 * key n8n uses when merging the gated tool's own arguments into the HITL
+	 * call, so declaring it captures them here and the gated tool then runs
+	 * with nothing. `toolName` is not one of the keys n8n merges, so it is safe
+	 * - if a future version adds one, this has to go the same way.
+	 */
+	{
+		displayName: 'Tool Name',
+		name: 'toolName',
+		type: 'string',
+		default: '={{ $tool.name }}',
+		description: 'Name of the tool the agent is asking about. Leave as is to take it from the agent.',
+
+		displayOptions: {
+			show: { operation: [SEND_AND_WAIT_OPERATION] },
+		},
+	},
+
+	/*
 	 * n8n's HITL generator looks specifically for a property called
 	 * `approvalOptions` and preserves it on the generated tool.
 	 */
