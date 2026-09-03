@@ -139,6 +139,10 @@ body {
 }
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
 
+/* Structured output - a command result, a file listing - reads better across
+ * the full row than squeezed into the width of its longest line. */
+.bubble.with-block { width: 100%; }
+
 /* The small HTML subset workflows send. `white-space: pre-wrap` on the bubble
  * already preserves newlines, so <pre> only needs to stop inheriting it twice
  * and to scroll rather than stretch the bubble. */

@@ -213,6 +213,13 @@ function renderRow(message) {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   renderRichText(bubble, message.content);
+
+  // A bubble shrinks to its longest line, which is right for prose but cramps
+  // command output into a narrow column. Let a message carrying a block widen
+  // to the row instead. Marked here rather than with :has() so it does not
+  // depend on selector support.
+  if (bubble.querySelector('pre')) bubble.classList.add('with-block');
+
   row.append(bubble);
 
   if (message.role === 'user' && (message.state === 'pending' || message.state === 'failed')) {
