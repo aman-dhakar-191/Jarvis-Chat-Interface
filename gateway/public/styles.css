@@ -148,15 +148,21 @@ body {
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
 
 /* Structured output - a command result, a file listing - reads better across
- * the full row than squeezed into the width of its longest line. */
-.bubble.with-block { width: 100%; }
+ * the full row than squeezed into the width of its longest line.
+ *
+ * The row must stretch too: `.row.assistant` sets `align-self: flex-start`, so
+ * the row is shrink-to-fit and a bubble at `width: 100%` of it stays exactly as
+ * narrow. Declared after those rules, since it matches at the same specificity.
+ */
+.row.with-block { align-self: stretch; }
+.row.with-block .bubble { width: 100%; }
 
-/* Names the tool a status message is about. A block of its own so the message
- * text starts on the next line rather than running on from the label. */
+/* Names the tool a status message is about, on the same line as the text it
+ * labels - it is a short status, not a heading over a paragraph. */
 .tool-tag {
-  display: block;
-  width: fit-content;
-  margin-bottom: 6px;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: baseline;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
