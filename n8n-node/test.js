@@ -152,6 +152,12 @@ check('progress keeps the stages the Jarvis client renders', () => {
 
 // ---- human review: the HITL contract ------------------------------------
 
+check('the tool name is read as a parameter, so $tool is in scope', () => {
+  const prop = d.properties.find((p) => p.name === 'toolName');
+  assert.equal(prop.default, '={{ $tool.name }}');
+  assert.deepEqual(prop.displayOptions.show.operation, ['sendAndWait']);
+});
+
 check('the sendAndWait value n8n generates its HITL tool from is intact', () => {
   const { SEND_AND_WAIT_OPERATION } = require('n8n-workflow');
   assert.equal(SEND_AND_WAIT_OPERATION, 'sendAndWait');
@@ -173,7 +179,10 @@ check('no property collides with the keys n8n uses for the gated tool call', () 
   // `toolParameters` is where n8n puts the gated tool's arguments when it
   // merges them into the HITL call. Declaring a property of that name captures
   // them here instead, and the gated tool runs with nothing.
-  const RESERVED = ['toolParameters', 'toolName', 'tool', 'hitlParameters'];
+  // `toolName` is deliberately absent: n8n does not merge a key of that name,
+  // and it is the only way to read $tool, which is in scope for parameter
+  // resolution but not for evaluateExpression() in execute().
+  const RESERVED = ['toolParameters', 'tool', 'hitlParameters'];
   for (const prop of d.properties) {
     assert.ok(!RESERVED.includes(prop.name), `${prop.name} collides with an n8n HITL payload key`);
   }

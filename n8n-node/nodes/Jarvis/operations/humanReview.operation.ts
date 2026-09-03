@@ -64,7 +64,16 @@ export async function execute(
 	 * the message, so the client can label it as its own element instead of the
 	 * model having to remember to prefix the text with a tool name.
 	 */
-	const toolName = this.evaluateExpression('{{ $tool.name }}', 0);
+	/*
+	 * Read as a parameter: $tool is in scope when n8n resolves this node's
+	 * parameters for a tool call, but not for evaluateExpression() here. The
+	 * expression fallback covers a hand-wired node, where neither resolves and
+	 * the label is simply absent.
+	 */
+	const toolName =
+		(this.getNodeParameter('toolName', 0, '') as string) ||
+		this.evaluateExpression('{{ $tool.name }}', 0);
+
 	const toolLabel = typeof toolName === 'string' ? toolName.trim() : '';
 
 	// ------------------------------------------------------------------
