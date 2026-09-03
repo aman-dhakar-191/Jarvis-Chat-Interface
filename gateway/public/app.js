@@ -228,7 +228,7 @@ function renderRow(message) {
   // command output into a narrow column. Let a message carrying a block widen
   // to the row instead. Marked here rather than with :has() so it does not
   // depend on selector support.
-  if (bubble.querySelector('pre')) bubble.classList.add('with-block');
+  if (bubble.querySelector('pre')) row.classList.add('with-block');
 
   row.append(bubble);
 
