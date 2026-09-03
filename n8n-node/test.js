@@ -301,6 +301,93 @@ check('a nested wrapper does not clobber the outer envelope', () => {
   assert.equal(out.tool, 'T', 'the tool name must survive the fold');
   assert.equal(out.toolParameters, undefined, 'the wrapper itself must be gone');
 });
+check('broken model tool schemas do not crash argument normalization', () => {
+  const cases = [
+    // Missing expected arguments
+    { tool: 'System_Tools' },
+    { tool: 'System_Tools', action: undefined },
+    { tool: 'System_Tools', action: null },
+    { tool: 'System_Tools', command: undefined },
+
+    // Wrong argument types
+    { tool: 'System_Tools', action: 123 },
+    { tool: 'System_Tools', command: 123 },
+    { tool: 'System_Tools', extra: [] },
+
+    // Model returns an unexpected schema
+    { name: 'System_Tools', arguments: { action: 'run_command' } },
+    { function: 'System_Tools', parameters: { action: 'run_command' } },
+    { tool: { name: 'System_Tools' }, arguments: {} },
+
+    // Wrapper exists but has the wrong shape
+    { tool: 'System_Tools', toolParameters: 'invalid' },
+    { tool: 'System_Tools', toolParameters: [] },
+    { tool: 'System_Tools', toolParameters: null },
+    { tool: 'System_Tools', toolParameters: 123 },
+
+    { tool: 'System_Tools', hitlParameters: 'invalid' },
+    { tool: 'System_Tools', hitlParameters: [] },
+    { tool: 'System_Tools', hitlParameters: null },
+    { tool: 'System_Tools', hitlParameters: 123 },
+  ];
+
+  for (const input of cases) {
+    assert.doesNotThrow(
+      () => normalizeToolArguments(input),
+      `broken model schema must not throw for ${JSON.stringify(input)}`,
+    );
+  }
+});
+
+check('malformed model JSON schemas are handled safely', () => {
+  const cases = [
+    '{"tool":"System_Tools"',
+    '{"tool":"System_Tools","toolParameters":',
+    '{"tool":"System_Tools","toolParameters":{"action":}',
+    '{tool:"System_Tools",action:"run_command"}',
+    '{"tool":"System_Tools","action":"run_command",}',
+    '```json\n{"tool":"System_Tools"}\n```',
+    'System_Tools({"action":"run_command"})',
+  ];
+
+  for (const input of cases) {
+    assert.doesNotThrow(
+      () => normalizeToolArguments(input),
+      `malformed model JSON must not throw for ${input}`,
+    );
+  }
+});
+
+check('unexpected model schema keys are preserved rather than silently dropped', () => {
+  assert.deepEqual(
+    normalizeToolArguments({
+      tool: 'System_Tools',
+      arguments: {
+        action: 'run_command',
+        command: 'ls',
+      },
+    }),
+    {
+      tool: 'System_Tools',
+      arguments: {
+        action: 'run_command',
+        command: 'ls',
+      },
+    },
+  );
+});
+
+check('missing tool arguments produce an empty argument object when appropriate', () => {
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'System_Tools' }),
+    { tool: 'System_Tools' },
+  );
+
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'System_Tools', toolParameters: {} }),
+    { tool: 'System_Tools' },
+  );
+});
 
 // ---- credential ---------------------------------------------------------
 
