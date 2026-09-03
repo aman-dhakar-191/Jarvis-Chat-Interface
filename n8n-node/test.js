@@ -10,6 +10,7 @@ const pkg = require('./package.json');
 const { JarvisGatewayApi } = require('./dist/credentials/JarvisGatewayApi.credentials.js');
 const { Jarvis } = require('./dist/nodes/Jarvis/Jarvis.node.js');
 const { JarvisTrigger } = require('./dist/nodes/Jarvis/JarvisTrigger.node.js');
+const { normalizeToolArguments } = require('./dist/nodes/Jarvis/common/helpers.js');
 const { normalizeChatInput } = require('./dist/nodes/Jarvis/normalize.js');
 
 let failures = 0;
@@ -237,6 +238,64 @@ const asyncChecks = checkAsync('the resume payload becomes workflow data', async
   // run the gated tool - the shape n8n's own sendAndWait nodes answer with.
   assert.equal(json.data.approved, true);
   assert.equal(json.data.approvalId, 'apr_1');
+});
+
+// ---- tool arguments -----------------------------------------------------
+
+check('flat tool arguments pass through', () => {
+  // The shape seen on one call: arguments at the top level.
+  assert.deepEqual(
+    normalizeToolArguments('{"tool":"System_Tools","action":"run_command","command":"ls -laR","extra":""}'),
+    { tool: 'System_Tools', action: 'run_command', command: 'ls -laR', extra: '' },
+  );
+});
+
+check('wrapped tool arguments are folded to the same shape', () => {
+  // The shape seen on the very next call to the same tool, same run.
+  assert.deepEqual(
+    normalizeToolArguments('{"toolParameters":{"action":"run_command","command":"ls -la","extra":""},"tool":"System_Tools"}'),
+    { tool: 'System_Tools', action: 'run_command', command: 'ls -la', extra: '' },
+  );
+});
+
+check('both shapes of the same call normalise identically', () => {
+  const flat = normalizeToolArguments({ tool: 'T', action: 'a', command: 'c' });
+  const wrapped = normalizeToolArguments({ tool: 'T', toolParameters: { action: 'a', command: 'c' } });
+  assert.deepEqual(flat, wrapped);
+});
+
+check('hitlParameters is unwrapped too', () => {
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'T', hitlParameters: { context: 'x' } }),
+    { tool: 'T', context: 'x' },
+  );
+});
+
+check('the message is not repeated as an argument', () => {
+  assert.deepEqual(normalizeToolArguments({ Message: 'Listing files…', action: 'run_command' }), {
+    action: 'run_command',
+  });
+});
+
+check('an object is accepted as readily as a JSON string', () => {
+  assert.deepEqual(normalizeToolArguments({ action: 'a' }), { action: 'a' });
+});
+
+check('malformed JSON is kept as text rather than thrown away', () => {
+  // An approval must not fail because a status payload was mangled.
+  assert.deepEqual(normalizeToolArguments('{"action": run_command'), { raw: '{"action": run_command' });
+});
+
+check('empty and non-object inputs give an empty object', () => {
+  for (const input of ['', '   ', null, undefined, 42, '[]', '"text"']) {
+    assert.deepEqual(normalizeToolArguments(input), {}, `for ${JSON.stringify(input)}`);
+  }
+});
+
+check('a nested wrapper does not clobber the outer envelope', () => {
+  const out = normalizeToolArguments({ tool: 'T', toolParameters: { command: 'ls' } });
+  assert.equal(out.tool, 'T', 'the tool name must survive the fold');
+  assert.equal(out.toolParameters, undefined, 'the wrapper itself must be gone');
 });
 
 // ---- credential ---------------------------------------------------------

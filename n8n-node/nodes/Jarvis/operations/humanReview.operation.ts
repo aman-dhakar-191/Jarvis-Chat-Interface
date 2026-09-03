@@ -8,7 +8,7 @@ import {
 } from 'n8n-workflow';
 
 import { pushEvent } from '../common/gateway';
-import { requireSession } from '../common/helpers';
+import { normalizeToolArguments, requireSession } from '../common/helpers';
 import type { ApprovalChoice, ApprovalOptions } from '../common/types';
 
 /**
@@ -179,7 +179,9 @@ export async function execute(
 	 * Seen live as Web Search failing with "Missing parameter query" while
 	 * search_query sat on this node's input.
 	 */
-	const toolParameters = this.evaluateExpression('{{ JSON.stringify($tool.parameters) }}', 0);
+	const toolParameters = normalizeToolArguments(
+		this.evaluateExpression('{{ JSON.stringify($tool.parameters) }}', 0),
+	);
 
 	// ------------------------------------------------------------------
 	// Send the approval request to Jarvis
