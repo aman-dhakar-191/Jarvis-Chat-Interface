@@ -271,10 +271,14 @@ check('hitlParameters is unwrapped too', () => {
   );
 });
 
-check('the message is not repeated as an argument', () => {
+check('no workflow-specific field name is stripped', () => {
+  // Only n8n's own wrapper keys are known here. A field called Message, or
+  // anything else a particular workflow happens to name, is just an argument.
   assert.deepEqual(normalizeToolArguments({ Message: 'Listing files…', action: 'run_command' }), {
+    Message: 'Listing files…',
     action: 'run_command',
   });
+  assert.deepEqual(normalizeToolArguments({ anything: 1, at: 'all' }), { anything: 1, at: 'all' });
 });
 
 check('an object is accepted as readily as a JSON string', () => {

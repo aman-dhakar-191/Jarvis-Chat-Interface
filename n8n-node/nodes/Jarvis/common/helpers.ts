@@ -43,6 +43,10 @@ export function requireSession(
  * Either way the caller wants the arguments themselves, so a wrapper is folded
  * into the top level. Malformed JSON is reported as text rather than thrown:
  * a status message is not worth failing an approval over.
+ *
+ * Only the two wrapper keys are known here, and both are n8n's own. Nothing
+ * about any particular workflow's field names belongs in this function - it has
+ * to hold for whatever a node is wired to.
  */
 export function normalizeToolArguments(raw: unknown): IDataObject {
 	let value: unknown = raw;
@@ -73,10 +77,6 @@ export function normalizeToolArguments(raw: unknown): IDataObject {
 			delete args[wrapper];
 		}
 	}
-
-	// Sent separately as the message content; repeating it as an argument is
-	// noise in an approval prompt.
-	delete args.Message;
 
 	return args;
 }
