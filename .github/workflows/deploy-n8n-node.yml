@@ -202,13 +202,14 @@ jobs:
             # step, which picks the package by mtime.
             rm -f n8n-nodes-*.tgz
 
-            # npm test builds and then runs the structural checks, so a broken
-            # node fails here rather than inside n8n after the restart.
+            # Just build and package. The suites already ran on the runner in
+            # the `test` job, before this job was allowed to start - running
+            # them again here proves nothing new and costs a minute of deploy.
             docker run --rm \
               -v "$PWD":/app \
               -w /app \
               node:22 \
-              bash -c 'npm install && npm test && npm pack'
+              bash -c 'npm install && npm run build && npm pack'
 
             ls -l n8n-nodes-*.tgz
 
