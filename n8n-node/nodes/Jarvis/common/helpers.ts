@@ -43,40 +43,81 @@ export function requireSession(
  * Either way the caller wants the arguments themselves, so a wrapper is folded
  * into the top level. Malformed JSON is reported as text rather than thrown:
  * a status message is not worth failing an approval over.
+ *
+ * Only the two wrapper keys are known here, and both are n8n's own. Nothing
+ * about any particular workflow's field names belongs in this function - it has
+ * to hold for whatever a node is wired to.
  */
-export function normalizeToolArguments(raw: unknown): IDataObject {
-	let value: unknown = raw;
+const WRAPPER_KEYS = ['toolParameters', 'hitlParameters'];
 
+/** How many times a wrapper may be nested before we stop digging. */
+const MAX_UNWRAP_DEPTH = 5;
+
+/**
+ * The value as a plain object, parsing it first if it arrived as JSON text.
+ * Anything that is not an object - an array, a number, unparseable text - has
+ * no arguments in it, so it comes back undefined.
+ */
+function asObject(value: unknown): IDataObject | undefined {
 	if (typeof value === 'string') {
 		const text = value.trim();
+		if (!text) return undefined;
+
+		try {
+			// Recursive because a value can arrive encoded more than once.
+			return asObject(JSON.parse(text));
+		} catch {
+			return undefined;
+		}
+	}
+
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+	return value as IDataObject;
+}
+
+export function normalizeToolArguments(raw: unknown): IDataObject {
+	// Text that is not JSON at all stays visible rather than being dropped.
+	if (typeof raw === 'string') {
+		const text = raw.trim();
 		if (!text) return {};
 
 		try {
-			value = JSON.parse(text);
+			JSON.parse(text);
 		} catch {
-			// Not JSON at all - keep it visible instead of silently dropping it.
 			return { raw: text };
 		}
 	}
 
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	const parsed = asObject(raw);
+	if (!parsed) return {};
 
-	let args = { ...(value as IDataObject) };
+	let args: IDataObject = { ...parsed };
 
-	for (const wrapper of ['toolParameters', 'hitlParameters']) {
-		const nested = args[wrapper];
+	for (let depth = 0; depth < MAX_UNWRAP_DEPTH; depth++) {
+		let unwrapped = false;
 
-		if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+		for (const wrapper of WRAPPER_KEYS) {
+			const nested = asObject(args[wrapper]);
+			if (!nested) continue;
+
+			/*
+			 * Drop the wrapper BEFORE merging its contents. Merging first and
+			 * deleting after loses everything when a wrapper is nested inside
+			 * itself: the inner object overwrites the key, and the delete then
+			 * removes the arguments along with it.
+			 */
+			const rest: IDataObject = { ...args };
+			delete rest[wrapper];
+
 			// The wrapper's own contents win: they are the arguments, and the
 			// outer level only carries the call's envelope.
-			args = { ...args, ...(nested as IDataObject) };
-			delete args[wrapper];
+			args = { ...rest, ...nested };
+			unwrapped = true;
 		}
-	}
 
-	// Sent separately as the message content; repeating it as an argument is
-	// noise in an approval prompt.
-	delete args.Message;
+		if (!unwrapped) break;
+	}
 
 	return args;
 }

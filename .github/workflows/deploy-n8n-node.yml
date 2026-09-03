@@ -24,12 +24,43 @@ on:
 jobs:
 
   # ============================================================
+  # TESTS
+  # ============================================================
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the ref being deployed, not the one the run started from, so
+      # a manual deploy of a branch tests that branch rather than main.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `npm test` builds first, so this also proves the package compiles.
+      - name: n8n node
+        working-directory: n8n-node
+        run: npm ci && npm test
+
+      - name: Gateway
+        working-directory: gateway
+        run: npm ci && npm test
+
+  # ============================================================
   # GATEWAY
   # ============================================================
 
   deploy-gateway:
     name: Deploy Gateway
     runs-on: ubuntu-latest
+
+    # A red test never touches the box.
+    needs: test
 
     steps:
       - name: Update source

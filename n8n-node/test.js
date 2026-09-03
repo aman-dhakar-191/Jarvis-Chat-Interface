@@ -271,10 +271,14 @@ check('hitlParameters is unwrapped too', () => {
   );
 });
 
-check('the message is not repeated as an argument', () => {
+check('no workflow-specific field name is stripped', () => {
+  // Only n8n's own wrapper keys are known here. A field called Message, or
+  // anything else a particular workflow happens to name, is just an argument.
   assert.deepEqual(normalizeToolArguments({ Message: 'Listing files…', action: 'run_command' }), {
+    Message: 'Listing files…',
     action: 'run_command',
   });
+  assert.deepEqual(normalizeToolArguments({ anything: 1, at: 'all' }), { anything: 1, at: 'all' });
 });
 
 check('an object is accepted as readily as a JSON string', () => {
@@ -296,6 +300,191 @@ check('a nested wrapper does not clobber the outer envelope', () => {
   const out = normalizeToolArguments({ tool: 'T', toolParameters: { command: 'ls' } });
   assert.equal(out.tool, 'T', 'the tool name must survive the fold');
   assert.equal(out.toolParameters, undefined, 'the wrapper itself must be gone');
+});
+check('broken model tool schemas do not crash argument normalization', () => {
+  const cases = [
+    // Missing expected arguments
+    { tool: 'System_Tools' },
+    { tool: 'System_Tools', action: undefined },
+    { tool: 'System_Tools', action: null },
+    { tool: 'System_Tools', command: undefined },
+
+    // Wrong argument types
+    { tool: 'System_Tools', action: 123 },
+    { tool: 'System_Tools', command: 123 },
+    { tool: 'System_Tools', extra: [] },
+
+    // Model returns an unexpected schema
+    { name: 'System_Tools', arguments: { action: 'run_command' } },
+    { function: 'System_Tools', parameters: { action: 'run_command' } },
+    { tool: { name: 'System_Tools' }, arguments: {} },
+
+    // Wrapper exists but has the wrong shape
+    { tool: 'System_Tools', toolParameters: 'invalid' },
+    { tool: 'System_Tools', toolParameters: [] },
+    { tool: 'System_Tools', toolParameters: null },
+    { tool: 'System_Tools', toolParameters: 123 },
+
+    { tool: 'System_Tools', hitlParameters: 'invalid' },
+    { tool: 'System_Tools', hitlParameters: [] },
+    { tool: 'System_Tools', hitlParameters: null },
+    { tool: 'System_Tools', hitlParameters: 123 },
+  ];
+
+  for (const input of cases) {
+    assert.doesNotThrow(
+      () => normalizeToolArguments(input),
+      `broken model schema must not throw for ${JSON.stringify(input)}`,
+    );
+  }
+});
+
+check('malformed model JSON schemas are handled safely', () => {
+  const cases = [
+    '{"tool":"System_Tools"',
+    '{"tool":"System_Tools","toolParameters":',
+    '{"tool":"System_Tools","toolParameters":{"action":}',
+    '{tool:"System_Tools",action:"run_command"}',
+    '{"tool":"System_Tools","action":"run_command",}',
+    '```json\n{"tool":"System_Tools"}\n```',
+    'System_Tools({"action":"run_command"})',
+  ];
+
+  for (const input of cases) {
+    assert.doesNotThrow(
+      () => normalizeToolArguments(input),
+      `malformed model JSON must not throw for ${input}`,
+    );
+  }
+});
+
+check('unexpected model schema keys are preserved rather than silently dropped', () => {
+  assert.deepEqual(
+    normalizeToolArguments({
+      tool: 'System_Tools',
+      arguments: {
+        action: 'run_command',
+        command: 'ls',
+      },
+    }),
+    {
+      tool: 'System_Tools',
+      arguments: {
+        action: 'run_command',
+        command: 'ls',
+      },
+    },
+  );
+});
+
+check('missing tool arguments produce an empty argument object when appropriate', () => {
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'System_Tools' }),
+    { tool: 'System_Tools' },
+  );
+
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'System_Tools', toolParameters: {} }),
+    { tool: 'System_Tools' },
+  );
+});
+
+check('a wrapper nested inside itself is dug out, not dropped', () => {
+  // Merging the inner object up and then deleting the key lost everything:
+  // the inner object overwrote the key that was about to be deleted.
+  assert.deepEqual(
+    normalizeToolArguments({ toolParameters: { toolParameters: { action: 'run_command' } } }),
+    { action: 'run_command' },
+  );
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'T', hitlParameters: { toolParameters: { command: 'ls' } } }),
+    { tool: 'T', command: 'ls' },
+  );
+});
+
+check('a wrapper that arrived as JSON text is parsed, not left as a string', () => {
+  assert.deepEqual(
+    normalizeToolArguments({ tool: 'T', toolParameters: '{"action":"run_command","command":"ls"}' }),
+    { tool: 'T', action: 'run_command', command: 'ls' },
+  );
+});
+
+check('a doubly encoded payload still resolves', () => {
+  assert.deepEqual(normalizeToolArguments(JSON.stringify(JSON.stringify({ action: 'a' }))), {
+    action: 'a',
+  });
+});
+
+check('both wrappers on one call are folded', () => {
+  assert.deepEqual(
+    normalizeToolArguments({ toolParameters: { a: 1 }, hitlParameters: { b: 2 } }),
+    { a: 1, b: 2 },
+  );
+});
+
+check('the wrapper wins over a colliding outer key', () => {
+  // The outer level is the call envelope; the wrapper holds the arguments.
+  assert.deepEqual(
+    normalizeToolArguments({ action: 'envelope', toolParameters: { action: 'argument' } }),
+    { action: 'argument' },
+  );
+});
+
+check('unwrapping is bounded, so a self-referencing payload cannot spin', () => {
+  // Build a wrapper nested far deeper than the cap.
+  let payload = { action: 'deep' };
+  for (let i = 0; i < 40; i++) payload = { toolParameters: payload };
+
+  const started = Date.now();
+  const out = normalizeToolArguments(payload);
+  assert.ok(Date.now() - started < 1000, 'must not take meaningful time');
+  assert.equal(typeof out, 'object');
+});
+
+check('a prototype-polluting payload cannot reach Object.prototype', () => {
+  normalizeToolArguments('{"__proto__":{"polluted":true},"action":"a"}');
+  normalizeToolArguments({ toolParameters: JSON.parse('{"__proto__":{"polluted":true}}') });
+  assert.equal({}.polluted, undefined, 'Object.prototype must be untouched');
+  assert.equal(Object.prototype.polluted, undefined);
+});
+
+check('a constructor key is data, not a call', () => {
+  assert.deepEqual(normalizeToolArguments('{"constructor":{"x":1},"a":1}'), {
+    constructor: { x: 1 },
+    a: 1,
+  });
+});
+
+check('values are passed through whatever their type', () => {
+  // This normalises shape, not types: a wrong-typed argument is the callee's
+  // problem to report, and silently coercing it would hide the mistake.
+  const input = {
+    str: 'x',
+    num: 0,
+    bool: false,
+    nul: null,
+    arr: [1, { deep: true }],
+    obj: { nested: { deeper: 1 } },
+    unicode: 'ls -la 📁 jarvis-skills',
+    multiline: 'line one\nline two',
+  };
+  assert.deepEqual(normalizeToolArguments(input), input);
+});
+
+check('an empty wrapper leaves only the envelope', () => {
+  assert.deepEqual(normalizeToolArguments({ tool: 'T', toolParameters: {} }), { tool: 'T' });
+});
+
+check('a large payload is handled without truncation', () => {
+  const command = 'ls -la '.repeat(5000);
+  assert.equal(normalizeToolArguments({ toolParameters: { command } }).command, command);
+});
+
+check('the input object is never mutated', () => {
+  const input = { tool: 'T', toolParameters: { action: 'a' } };
+  const copy = JSON.parse(JSON.stringify(input));
+  normalizeToolArguments(input);
+  assert.deepEqual(input, copy, 'the caller keeps whatever it passed in');
 });
 
 // ---- credential ---------------------------------------------------------
