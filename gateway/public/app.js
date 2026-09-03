@@ -212,7 +212,24 @@ function renderRow(message) {
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
+
+  // A tool name travels beside the text, not inside it, so it reads as a label
+  // on the message rather than a prefix the model had to remember to write.
+  if (message.tool) {
+    const tag = document.createElement('span');
+    tag.className = 'tool-tag';
+    tag.textContent = message.tool;
+    bubble.append(tag);
+  }
+
   renderRichText(bubble, message.content);
+
+  // A bubble shrinks to its longest line, which is right for prose but cramps
+  // command output into a narrow column. Let a message carrying a block widen
+  // to the row instead. Marked here rather than with :has() so it does not
+  // depend on selector support.
+  if (bubble.querySelector('pre')) bubble.classList.add('with-block');
+
   row.append(bubble);
 
   if (message.role === 'user' && (message.state === 'pending' || message.state === 'failed')) {
@@ -538,7 +555,15 @@ function handleEvent(event) {
       // caption on that indicator, so settling here makes every later
       // tool.started/progress/finished arrive and draw nothing.
       if (event.data.replyTo) settle(event.data.replyTo, 'sent');
-      addMessage({ id: uuid(), role: 'assistant', content: event.data.content ?? '', ts: Date.now() });
+      addMessage({
+        id: uuid(),
+        role: 'assistant',
+        content: event.data.content ?? '',
+        // Which tool this is about, when the sender said. Kept as its own field
+        // so it can be rendered as a label rather than glued onto the text.
+        tool: typeof event.data.toolName === 'string' ? event.data.toolName : null,
+        ts: Date.now(),
+      });
       break;
     }
 

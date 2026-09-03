@@ -59,6 +59,14 @@ export async function execute(
 	 */
 	const message = this.getNodeParameter('message', 0) as string;
 
+	/*
+	 * Read from the agent's tool context. Sent as data rather than written into
+	 * the message, so the client can label it as its own element instead of the
+	 * model having to remember to prefix the text with a tool name.
+	 */
+	const toolName = this.evaluateExpression('{{ $tool.name }}', 0);
+	const toolLabel = typeof toolName === 'string' ? toolName.trim() : '';
+
 	// ------------------------------------------------------------------
 	// Inform, or ask?
 	// ------------------------------------------------------------------
@@ -91,11 +99,16 @@ export async function execute(
 		 * carry on. No resume URL, no parked execution, so the gateway sees an
 		 * ordinary notification.
 		 */
-		const response = await pushEvent(this, pushUrl, {
+		const informational: IDataObject = {
 			sessionId,
 			event: 'notification',
 			content: message,
-		});
+		};
+
+		// Only when there is one: outside a tool context there is no tool to name.
+		if (toolLabel) informational.data = { toolName: toolLabel };
+
+		const response = await pushEvent(this, pushUrl, informational);
 
 		/*
 		 * `approved: true` is the whole point: the agent asked whether it may
@@ -150,15 +163,13 @@ export async function execute(
 	this.setMetadata({ resumeUrl });
 
 	/*
-	 * Read from the agent's tool context, never declared as node parameters.
-	 *
-	 * A property named `toolParameters` collides with the key n8n uses when it
-	 * merges the gated tool's arguments into the HITL call: the model's
-	 * arguments land in this node's display field instead of reaching the gated
-	 * tool, which then runs with nothing. Seen live as Web Search failing with
-	 * "Missing parameter query" while search_query sat on this node's input.
+	 * Never declared as node parameters. A property named `toolParameters`
+	 * collides with the key n8n uses when it merges the gated tool's arguments
+	 * into the HITL call: the model's arguments land in this node's display
+	 * field instead of reaching the gated tool, which then runs with nothing.
+	 * Seen live as Web Search failing with "Missing parameter query" while
+	 * search_query sat on this node's input.
 	 */
-	const toolName = this.evaluateExpression('{{ $tool.name }}', 0);
 	const toolParameters = this.evaluateExpression('{{ JSON.stringify($tool.parameters) }}', 0);
 
 	// ------------------------------------------------------------------
