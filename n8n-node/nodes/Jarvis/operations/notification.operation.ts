@@ -22,5 +22,13 @@ export async function execute(
 		content,
 	});
 
-	return { json: response, pairedItem: { item: itemIndex } };
+	const input = this.getInputData()[itemIndex];
+
+return {
+  json: {
+    ...input.json,
+    jarvis: response,
+  },
+  pairedItem: { item: itemIndex },
+};
 }
