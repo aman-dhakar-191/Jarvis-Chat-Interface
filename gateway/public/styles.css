@@ -151,6 +151,22 @@ body {
  * the full row than squeezed into the width of its longest line. */
 .bubble.with-block { width: 100%; }
 
+/* Names the tool a status message is about. A block of its own so the message
+ * text starts on the next line rather than running on from the label. */
+.tool-tag {
+  display: block;
+  width: fit-content;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
 /* The small HTML subset workflows send. `white-space: pre-wrap` on the bubble
  * already preserves newlines, so <pre> only needs to stop inheriting it twice
  * and to scroll rather than stretch the bubble. */
