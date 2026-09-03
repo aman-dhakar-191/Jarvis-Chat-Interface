@@ -148,6 +148,62 @@ function render() {
   if (stick) scrollToBottom();
 }
 
+/*
+ * Workflows format messages with the small HTML subset Telegram accepts -
+ * <b>, <pre>, and friends - so rendering them as plain text shows the tags.
+ *
+ * The text is LLM-written and arrives from whatever pushed it, so it is never
+ * handed to innerHTML. Instead it is tokenised and rebuilt as DOM nodes from a
+ * fixed allowlist: an allowed tag becomes an element, and anything else -
+ * <script>, <img onerror>, a stray angle bracket - stays literal text, because
+ * every text run goes through createTextNode.
+ */
+const RICH_TAGS = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'code', 'pre']);
+const TAG_PATTERN = /<\s*(\/?)\s*([a-zA-Z]+)\s*\/?\s*>/g;
+
+function appendText(parent, text) {
+  if (text) parent.append(document.createTextNode(text));
+}
+
+/** Renders `text` into `target`, honouring the allowlisted tags only. */
+function renderRichText(target, text) {
+  const source = String(text ?? '');
+  const stack = [target];
+  let cursor = 0;
+  let match;
+
+  TAG_PATTERN.lastIndex = 0;
+
+  while ((match = TAG_PATTERN.exec(source)) !== null) {
+    const [raw, closing, rawName] = match;
+    const name = rawName.toLowerCase();
+
+    // Not allowlisted: leave it in the pending text run so it renders as the
+    // literal characters the sender wrote.
+    if (name !== 'br' && !RICH_TAGS.has(name)) continue;
+
+    appendText(stack[stack.length - 1], source.slice(cursor, match.index));
+    cursor = match.index + raw.length;
+
+    if (name === 'br') {
+      stack[stack.length - 1].append(document.createElement('br'));
+      continue;
+    }
+
+    if (closing) {
+      // Ignore a close with no matching open rather than unwinding past it.
+      if (stack.length > 1 && stack[stack.length - 1].localName === name) stack.pop();
+      continue;
+    }
+
+    const element = document.createElement(name);
+    stack[stack.length - 1].append(element);
+    stack.push(element);
+  }
+
+  appendText(stack[stack.length - 1], source.slice(cursor));
+}
+
 function renderRow(message) {
   if (message.role === 'approval') return renderApproval(message);
 
@@ -156,7 +212,7 @@ function renderRow(message) {
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = message.content;
+  renderRichText(bubble, message.content);
   row.append(bubble);
 
   if (message.role === 'user' && (message.state === 'pending' || message.state === 'failed')) {
@@ -193,7 +249,7 @@ function renderApproval(message) {
 
   const text = document.createElement('div');
   text.className = 'approval-text';
-  text.textContent = message.content;
+  renderRichText(text, message.content);
   card.append(text);
 
   if (message.state === 'open' && message.inputType === 'text') {
