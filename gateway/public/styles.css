@@ -125,7 +125,15 @@ body {
 .empty-title { color: var(--text); font-size: 17px; font-weight: 600; margin: 14px 0 4px; }
 .empty-sub { margin: 0; font-size: 13px; }
 
+/* Bubbles are capped well short of the row so the transcript keeps its shape -
+ * a message that ran edge to edge would stop reading as one side of a
+ * conversation. The narrow-screen value is left as it was, where 70% would
+ * waste more room than it signals. */
 .row { display: flex; flex-direction: column; max-width: 88%; }
+
+@media (min-width: 560px) {
+  .row { max-width: 70%; }
+}
 .row.user { align-self: flex-end; align-items: flex-end; }
 .row.assistant, .row.system { align-self: flex-start; align-items: flex-start; }
 .row.system { max-width: 100%; align-self: center; }
