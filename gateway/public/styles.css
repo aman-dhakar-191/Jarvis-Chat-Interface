@@ -139,6 +139,42 @@ body {
 }
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
 
+/* The small HTML subset workflows send. `white-space: pre-wrap` on the bubble
+ * already preserves newlines, so <pre> only needs to stop inheriting it twice
+ * and to scroll rather than stretch the bubble. */
+.bubble code,
+.approval-text code,
+.bubble pre,
+.approval-text pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.bubble code,
+.approval-text code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(127, 127, 127, 0.18);
+}
+
+.bubble pre,
+.approval-text pre {
+  margin: 6px 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(127, 127, 127, 0.14);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* A <pre> already carries the block background, so a <code> inside one must not
+ * paint a second panel on top of it. */
+.bubble pre code,
+.approval-text pre code {
+  padding: 0;
+  background: none;
+}
+
 .row.user .bubble {
   background: var(--accent);
   color: #fff;
