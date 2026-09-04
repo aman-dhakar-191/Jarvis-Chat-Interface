@@ -86,9 +86,10 @@ and **the agent picks which one per call**:
 | read or look something up - search the web, read email | `false` | The user is told what is happening. Nothing to approve, so the agent continues immediately. |
 | change, send, delete or spend something - send that email | `true` | Buttons in the app; the execution parks until the user answers. |
 
-That choice is the `Approval Required` field, whose default is a `$fromAI()`
-call, so the model fills it in when it invokes the tool. Replace the expression
-with a fixed `true`/`false` to take the decision away from the agent.
+That choice is the `Approval Required` field. Its default is a real `true`, not
+an expression; use n8n's sparkle override on the field to let the agent decide
+per call, which is also what puts it into the wrapper's `hitlParameters` schema
+(only `$fromAI()` placeholders on this node appear there).
 
 `Approval Required` is a plain boolean, on by default: this operation exists to
 ask. Turn it off to only inform. Only a real `true` asks, so a toggle showing
@@ -102,12 +103,69 @@ with *"The workflow did not return a response"* while the sub-workflow sits
 waiting for an answer nobody is coming to give. Gate at the top level, where the
 execution that parks is the one the user is talking to.
 
-The node deliberately declares **no** `toolName` or `toolParameters` parameter.
-`toolParameters` is the key n8n uses when it merges the gated tool's arguments
-into the HITL call, so a property of that name captures them here and the gated
-tool then runs with nothing - seen as a tool failing on a missing required
-argument while that argument sits on this node's input. Both values are read
-from `$tool` at execution time instead.
+### The wrapper schema, and who generates it
+
+n8n core generates the wrapper - this node does not. `createHitlToolkit` in
+`n8n-core` republishes every tool connected to this node under **its own name
+and description**, with the schema
+
+```jsonc
+{
+  "type": "object",
+  "properties": {
+    // the gated tool's own schema, whatever it is - never flattened to a
+    // bare { "type": "object" } by anything on this side
+    "toolParameters": { "type": "object",
+                        "properties": { "skill_name": { "type": "string" } },
+                        "required": ["skill_name"] },
+    // this node's $fromAI placeholders, minus `toolParameters` and `tool`
+    "hitlParameters": { "type": "object" }
+  }
+}
+```
+
+and on invocation hands this node `{ tool, ...hitlParameters, toolParameters }`
+- which is exactly what `$tool.name` and `$tool.parameters` read.
+
+Because the toolkit **replaces** the connected tools, an agent wired
+`AI Agent → Jarvis (Send and Wait) → some tool` never sees the gated tool
+itself, so it cannot call it directly. The one bypass n8n cannot prevent is a
+second `ai_tool` connection from the agent straight to that tool: wire each
+gated tool through the Jarvis node only.
+
+The node declares **no** `toolParameters` and no `tool` parameter. Those are
+the keys n8n merges the gated tool's call into, so a property of either name
+captures them here and the gated tool then runs with nothing - seen as a tool
+failing on a missing required argument while that argument sits on this node's
+input. `toolName` **is** declared, and has to be: `$tool` is in scope when n8n
+resolves this node's parameters, but not for `evaluateExpression()` inside
+`execute()`, and `toolName` is not one of the keys n8n merges. `toolParameters`
+is read from `$tool.parameters` at execution time instead.
+
+### Failing closed
+
+Inside a tool call the node holds the model to the wrapper schema. A call whose
+`toolParameters` is missing, unparseable or not an object - including the
+underlying tool's arguments sent flat, as if the gated tool had been called
+directly - fails with
+
+> Invalid HITL tool call for `<tool>`: `toolParameters` is required.
+> This tool is an approval wrapper for another tool. Put the underlying tool
+> arguments inside `toolParameters`, and approval settings inside
+> `hitlParameters`. Do not call the underlying tool directly.
+
+so the framework can hand the model the error and let it retry. Nothing is
+guessed at: rewrapping `{ "skill_name": "x" }` into
+`{ "toolParameters": { "skill_name": "x" } }` would raise an approval that does
+not describe what n8n will actually run. The check also covers
+`Approval Required: false`, which answers `approved: true` and therefore runs
+the gated tool just the same. A tool name that is not a valid n8n tool
+identifier is refused for the same reason. A hand-wired node has no tool
+context and is unaffected.
+
+Approval stays the authority either way: n8n runs the gated tool only when it
+reads `approved === true` back from this node, and it runs it with the original
+`toolParameters`, which this node never modifies.
 
 When approval *is* required, the node parks the execution itself - no separate
 Wait node. It sends n8n's `$execution.resumeUrl` to the gateway, which **stores

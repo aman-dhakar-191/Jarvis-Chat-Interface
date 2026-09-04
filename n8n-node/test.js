@@ -10,7 +10,12 @@ const pkg = require('./package.json');
 const { JarvisGatewayApi } = require('./dist/credentials/JarvisGatewayApi.credentials.js');
 const { Jarvis } = require('./dist/nodes/Jarvis/Jarvis.node.js');
 const { JarvisTrigger } = require('./dist/nodes/Jarvis/JarvisTrigger.node.js');
-const { normalizeToolArguments } = require('./dist/nodes/Jarvis/common/helpers.js');
+const {
+  normalizeToolArguments,
+  inspectToolParameters,
+  readToolIdentity,
+} = require('./dist/nodes/Jarvis/common/helpers.js');
+const humanReview = require('./dist/nodes/Jarvis/operations/humanReview.operation.js');
 const { normalizeChatInput } = require('./dist/nodes/Jarvis/normalize.js');
 
 let failures = 0;
@@ -487,6 +492,231 @@ check('the input object is never mutated', () => {
   assert.deepEqual(input, copy, 'the caller keeps whatever it passed in');
 });
 
+
+// ---- the HITL wrapper contract -----------------------------------------
+//
+// n8n core generates the wrapper (createHitlToolkit in n8n-core): every gated
+// tool is republished under its own name with the schema
+//
+//     { toolParameters: <the gated tool's own schema>, hitlParameters: {...} }
+//
+// and on invocation this node is handed { tool, ...hitlParameters,
+// toolParameters }, which is what $tool.name and $tool.parameters read. These
+// checks drive execute() with that contract, and with the ways a weaker model
+// gets it wrong.
+
+// What n8n's expression layer actually yields for
+// {{ JSON.stringify($tool.parameters) }}: a key the model never sent resolves
+// to the empty-string default, not to undefined.
+const toolParametersExpression = (call) =>
+  JSON.stringify('toolParameters' in call ? call.toolParameters : '');
+
+const makeContext = (call, options = {}) => {
+  const pushed = [];
+  const state = { pushed, waited: undefined, metadata: undefined };
+
+  const node = { name: 'Jarvis', type: 'jarvis', typeVersion: 1, parameters: {} };
+
+  const values = {
+    sessionId: 'session_aman',
+    message: 'The agent wants to use a tool',
+    toolName: options.toolName === undefined ? call.tool : options.toolName,
+    approvalRequired: options.approvalRequired ?? true,
+    approvalOptions: {},
+    limitWaitTime: false,
+    ...options.parameters,
+  };
+
+  const ctx = {
+    getNode: () => node,
+    getInputData: () => [{ json: {} }],
+    continueOnFail: () => false,
+    setMetadata: (m) => { state.metadata = m; },
+    putExecutionToWait: async (till) => { state.waited = till; },
+    getNodeParameter: (name, _i, fallback) => (values[name] === undefined ? fallback : values[name]),
+    evaluateExpression: (expression) => {
+      if (expression === '{{ $tool.name }}') return values.toolName;
+      if (expression === '{{ JSON.stringify($tool.parameters) }}') return toolParametersExpression(call);
+      if (expression === '{{ $execution.resumeUrl }}') return 'https://n8n.example.com/webhook-waiting/1';
+      return undefined;
+    },
+    helpers: {
+      httpRequestWithAuthentication: async (_cred, request) => {
+        pushed.push(request.body);
+        return { ok: true, delivered: true };
+      },
+    },
+  };
+
+  ctx.helpers.httpRequestWithAuthentication.call = (self, cred, request) =>
+    ctx.helpers.httpRequestWithAuthentication(cred, request);
+
+  return { ctx, state };
+};
+
+const runHitl = async (call, options) => {
+  const { ctx, state } = makeContext(call, options);
+  const output = await humanReview.execute.call(ctx, 'https://gateway.example.com/api/push');
+  return { output, ...state };
+};
+
+const rejectsHitl = async (label, call, options) => {
+  await checkAsync(label, async () => {
+    const { ctx, state } = makeContext(call, options);
+    await assert.rejects(
+      async () => await humanReview.execute.call(ctx, 'https://gateway.example.com/api/push'),
+      (error) => {
+        // Explicit enough for a weaker model to correct itself on the retry.
+        assert.match(error.message, /Invalid HITL tool call/);
+        assert.match(error.description ?? '', /toolParameters/);
+        return true;
+      },
+    );
+    // Fail closed: nothing was asked of the user, so nothing can be approved.
+    assert.deepEqual(state.pushed, [], 'a rejected call must not raise an approval');
+    assert.equal(state.waited, undefined, 'a rejected call must not park the execution');
+  });
+};
+
+// A. the correct call
+const hitlChecks = checkAsync('a wrapper call carries the gated arguments into the approval', async () => {
+  const { output, pushed, waited } = await runHitl({
+    tool: 'Call_Load_Skills_',
+    toolParameters: { skill_name: 'caveman' },
+    hitlParameters: {},
+  });
+
+  assert.equal(pushed.length, 1);
+  const [event] = pushed;
+  assert.equal(event.event, 'approval.request');
+  assert.equal(event.data.toolName, 'Call_Load_Skills_');
+  // Exactly what the model put in toolParameters, unchanged.
+  assert.deepEqual(event.data.toolParameters, { skill_name: 'caveman' });
+  assert.ok(event.resumeUrl, 'the gateway needs somewhere to answer');
+  assert.ok(waited, 'the execution must park until the user answers');
+  assert.deepEqual(output, [[{ json: {} }]]);
+})
+  // B. missing toolParameters
+  .then(async () => await rejectsHitl(
+    'a call without toolParameters is rejected, not repaired',
+    { tool: 'Call_Load_Skills_', hitlParameters: { approvalRequired: true } },
+  ))
+  // C. the underlying tool's arguments sent flat, as if calling it directly
+  .then(async () => await rejectsHitl(
+    'the gated tool\'s own arguments sent flat are rejected, never rewrapped',
+    { tool: 'Call_Load_Skills_', skill_name: 'caveman' },
+  ))
+  // D. toolParameters of the wrong type
+  .then(async () => await rejectsHitl(
+    'a non-object toolParameters is rejected',
+    { tool: 'Call_Load_Skills_', toolParameters: 'caveman' },
+  ))
+  .then(async () => await rejectsHitl(
+    'an array toolParameters is rejected',
+    { tool: 'Call_Load_Skills_', toolParameters: ['caveman'] },
+  ))
+  // 4. tool identity
+  .then(async () => await rejectsHitl(
+    'a tool name that is not a tool identifier is rejected',
+    { tool: 'Call_Load_Skills_', toolParameters: { skill_name: 'caveman' } },
+    { toolName: 'Call_Load_Skills_; rm -rf /' },
+  ))
+  // E. a different tool, several arguments: nothing here is skill-specific
+  .then(async () => await checkAsync('any gated tool\'s arguments pass through unchanged', async () => {
+    const parameters = {
+      to: 'someone@example.com',
+      subject: 'Q3',
+      body: 'multi\nline',
+      cc: ['a@example.com'],
+      draft: false,
+      retries: 2,
+    };
+    const { pushed } = await runHitl({
+      tool: 'gmail_send',
+      toolParameters: parameters,
+      hitlParameters: {},
+    });
+    assert.deepEqual(pushed[0].data.toolParameters, parameters);
+    assert.equal(pushed[0].data.toolName, 'gmail_send');
+  }))
+  .then(async () => await checkAsync('a gated tool that takes no arguments is not a malformed call', async () => {
+    const { pushed } = await runHitl({ tool: 'get_time', toolParameters: {}, hitlParameters: {} });
+    assert.equal(pushed[0].event, 'approval.request');
+    assert.deepEqual(pushed[0].data.toolParameters, {});
+  }))
+  // F. informational mode
+  .then(async () => await checkAsync('approvalRequired=false still informs and continues', async () => {
+    const { output, pushed, waited } = await runHitl(
+      { tool: 'web_search', toolParameters: { query: 'weather' }, hitlParameters: {} },
+      { approvalRequired: false },
+    );
+    assert.equal(pushed[0].event, 'notification');
+    assert.deepEqual(pushed[0].data, { toolName: 'web_search' });
+    assert.equal(waited, undefined, 'nothing to approve, so nothing parks');
+    // n8n runs the gated tool on `approved`, so informing must still answer it.
+    assert.equal(output[0][0].json.approved, true);
+    assert.equal(output[0][0].json.data.approved, true);
+  }))
+  .then(async () => await rejectsHitl(
+    'informational mode fails closed too, since it answers approved: true',
+    { tool: 'web_search', hitlParameters: {} },
+    { approvalRequired: false },
+  ))
+  // A hand-wired node has no tool context at all, and keeps working.
+  .then(async () => await checkAsync('a hand-wired node without a tool context is unaffected', async () => {
+    const { pushed, waited } = await runHitl({}, { toolName: '' });
+    assert.equal(pushed[0].event, 'approval.request');
+    assert.equal(pushed[0].data.toolName, '');
+    assert.ok(waited);
+  }))
+  // G/H. the approval answer n8n reads before it runs the gated tool
+  .then(async () => await checkAsync('an approved answer is reported as approved', async () => {
+    const ctx = { getBodyData: () => ({ approvalId: 'apr_2', choice: 'approve', approved: true }) };
+    const { json } = (await new Jarvis().webhook.call(ctx)).workflowData[0][0];
+    // processHitlResponses runs the gated tool with the original toolParameters
+    // only when it reads `approved === true` here.
+    assert.equal(json.approved, true);
+    assert.equal(json.data.approved, true);
+  }))
+  .then(async () => await checkAsync('a rejected answer never reads as approval', async () => {
+    const ctx = { getBodyData: () => ({ approvalId: 'apr_3', choice: 'reject', approved: false }) };
+    const { json } = (await new Jarvis().webhook.call(ctx)).workflowData[0][0];
+    assert.equal(json.approved, false);
+    assert.equal(json.data.approved, false);
+    assert.notEqual(json.data.approved, true, 'the gated tool must not run');
+  }));
+
+// ---- the strict readers the contract is built on ------------------------
+
+check('toolParameters is accepted only as an object', () => {
+  assert.equal(inspectToolParameters('{"skill_name":"caveman"}').status, 'ok');
+  assert.deepEqual(inspectToolParameters('{"a":1}').value, { a: 1 });
+  assert.equal(inspectToolParameters({ a: 1 }).status, 'ok');
+  // An empty object is a real answer: some tools take no arguments.
+  assert.equal(inspectToolParameters('{}').status, 'ok');
+
+  // Absent - what {{ JSON.stringify($tool.parameters) }} yields for a key the
+  // model never sent.
+  for (const missing of ['""', '', '   ', 'null', undefined, null]) {
+    assert.equal(inspectToolParameters(missing).status, 'missing', `for ${JSON.stringify(missing)}`);
+  }
+
+  for (const invalid of ['"caveman"', '[]', '[1]', '42', 'true', '{"a":', 'caveman']) {
+    assert.equal(inspectToolParameters(invalid).status, 'invalid', `for ${JSON.stringify(invalid)}`);
+  }
+});
+
+check('a tool identity is a tool name or nothing at all', () => {
+  assert.equal(readToolIdentity('Call_Load_Skills_').name, 'Call_Load_Skills_');
+  assert.equal(readToolIdentity('  gmail_send  ').name, 'gmail_send');
+  assert.deepEqual(readToolIdentity(''), {}, 'no tool context is not an error');
+  assert.deepEqual(readToolIdentity(undefined), {});
+  for (const bad of ['a tool', 'x'.repeat(65), 'drop;rm', '../other']) {
+    assert.ok(readToolIdentity(bad).invalid, `${bad} must not name a tool`);
+  }
+  assert.ok(readToolIdentity({ name: 'x' }).invalid);
+});
+
 // ---- credential ---------------------------------------------------------
 
 const cred = new JarvisGatewayApi();
@@ -593,7 +823,7 @@ check('normalize never regenerates a supplied sessionId', () => {
   assert.equal(n.sessionId, 'session_aman');
 });
 
-asyncChecks.then(() => {
+Promise.all([asyncChecks, hitlChecks]).then(() => {
   console.log(failures ? `\n${failures} FAILURES` : '\nALL STRUCTURAL CHECKS PASSED');
   process.exit(failures ? 1 : 0);
 });
