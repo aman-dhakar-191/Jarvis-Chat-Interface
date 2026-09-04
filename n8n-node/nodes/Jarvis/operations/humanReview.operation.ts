@@ -1,4 +1,5 @@
 import {
+	NodeOperationError,
 	WAIT_INDEFINITELY,
 	type IDataObject,
 	type IExecuteFunctions,
@@ -8,7 +9,13 @@ import {
 } from 'n8n-workflow';
 
 import { pushEvent } from '../common/gateway';
-import { normalizeToolArguments, requireSession } from '../common/helpers';
+import {
+	HITL_CONTRACT_HINT,
+	inspectToolParameters,
+	normalizeToolArguments,
+	readToolIdentity,
+	requireSession,
+} from '../common/helpers';
 import type { ApprovalChoice, ApprovalOptions } from '../common/types';
 
 /**
@@ -26,6 +33,19 @@ import type { ApprovalChoice, ApprovalOptions } from '../common/types';
  */
 function approvalResult(fields: IDataObject): IDataObject {
 	return { ...fields, data: { ...fields } };
+}
+
+/**
+ * `$tool` only resolves inside a tool call. A hand-wired node has no tool
+ * context, and asking for one there throws rather than answering nothing - so
+ * an unresolvable expression reads as absent, which is what it means.
+ */
+function evaluate(ctx: IExecuteFunctions, expression: string): unknown {
+	try {
+		return ctx.evaluateExpression(expression, 0);
+	} catch {
+		return undefined;
+	}
 }
 
 const MS_PER_UNIT: Record<string, number> = {
@@ -70,11 +90,67 @@ export async function execute(
 	 * expression fallback covers a hand-wired node, where neither resolves and
 	 * the label is simply absent.
 	 */
-	const toolName =
-		(this.getNodeParameter('toolName', 0, '') as string) ||
-		this.evaluateExpression('{{ $tool.name }}', 0);
+	let declaredToolName: unknown = '';
 
-	const toolLabel = typeof toolName === 'string' ? toolName.trim() : '';
+	try {
+		declaredToolName = this.getNodeParameter('toolName', 0, '');
+	} catch {
+		// The default is an expression over $tool, which a hand-wired node
+		// cannot resolve. No tool context is not a failure, just no tool.
+		declaredToolName = '';
+	}
+
+	const toolNameValue = declaredToolName || evaluate(this, '{{ $tool.name }}');
+
+	const identity = readToolIdentity(toolNameValue);
+
+	if (identity.invalid) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Invalid HITL tool call: ${identity.invalid}.`,
+			{ description: HITL_CONTRACT_HINT },
+		);
+	}
+
+	const toolLabel = identity.name ?? '';
+
+	// ------------------------------------------------------------------
+	// The gated tool's own arguments
+	// ------------------------------------------------------------------
+
+	/*
+	 * Never declared as node parameters. A property named `toolParameters`
+	 * collides with the key n8n uses when it merges the gated tool's arguments
+	 * into the HITL call: the model's arguments land in this node's display
+	 * field instead of reaching the gated tool, which then runs with nothing.
+	 * Seen live as Web Search failing with "Missing parameter query" while
+	 * search_query sat on this node's input.
+	 */
+	const rawToolParameters = evaluate(this, '{{ JSON.stringify($tool.parameters) }}');
+
+	/*
+	 * Fail closed, but only where the contract applies. A tool name means this
+	 * run came through the generated HITL wrapper, so the wrapper's schema is
+	 * what the model was given and a call that does not match it is a mistake
+	 * to report - not one to guess at. A hand-wired node has no tool context at
+	 * all and keeps behaving as it always has.
+	 *
+	 * The check sits before the informational branch on purpose: that branch
+	 * answers `approved: true`, and n8n runs the gated tool on that answer.
+	 */
+	if (toolLabel) {
+		const check = inspectToolParameters(rawToolParameters);
+
+		if (check.status !== 'ok') {
+			throw new NodeOperationError(
+				this.getNode(),
+				`Invalid HITL tool call for ${toolLabel}: ${check.reason}.`,
+				{ description: HITL_CONTRACT_HINT },
+			);
+		}
+	}
+
+	const toolParameters = normalizeToolArguments(rawToolParameters);
 
 	// ------------------------------------------------------------------
 	// Inform, or ask?
@@ -171,18 +247,6 @@ export async function execute(
 	// Makes the n8n editor show the node as waiting.
 	this.setMetadata({ resumeUrl });
 
-	/*
-	 * Never declared as node parameters. A property named `toolParameters`
-	 * collides with the key n8n uses when it merges the gated tool's arguments
-	 * into the HITL call: the model's arguments land in this node's display
-	 * field instead of reaching the gated tool, which then runs with nothing.
-	 * Seen live as Web Search failing with "Missing parameter query" while
-	 * search_query sat on this node's input.
-	 */
-	const toolParameters = normalizeToolArguments(
-		this.evaluateExpression('{{ JSON.stringify($tool.parameters) }}', 0),
-	);
-
 	// ------------------------------------------------------------------
 	// Send the approval request to Jarvis
 	// ------------------------------------------------------------------
@@ -196,7 +260,7 @@ export async function execute(
 			inputType: 'choice',
 			choices,
 			approvalType,
-			toolName,
+			toolName: toolLabel,
 			toolParameters,
 		},
 	});

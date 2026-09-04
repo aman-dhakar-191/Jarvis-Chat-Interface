@@ -55,11 +55,13 @@ export const humanReviewDescription: INodeProperties[] = [
 	 * n8n injects $tool when it resolves a node's parameters for a tool call,
 	 * and reading it from code instead yields nothing.
 	 *
-	 * There is deliberately no `toolParameters` counterpart. That name is the
-	 * key n8n uses when merging the gated tool's own arguments into the HITL
-	 * call, so declaring it captures them here and the gated tool then runs
-	 * with nothing. `toolName` is not one of the keys n8n merges, so it is safe
-	 * - if a future version adds one, this has to go the same way.
+	 * There is deliberately no `toolParameters` and no `tool` counterpart.
+	 * Those are the keys n8n merges the gated tool's own call into
+	 * (`createEngineRequests` builds `{ tool, ...hitlParameters,
+	 * toolParameters }`), so declaring either captures them here and the gated
+	 * tool then runs with nothing. `toolName` is not one of the keys n8n
+	 * merges, so it is safe - if a future version adds one, this has to go the
+	 * same way.
 	 */
 	{
 		displayName: 'Tool Name',

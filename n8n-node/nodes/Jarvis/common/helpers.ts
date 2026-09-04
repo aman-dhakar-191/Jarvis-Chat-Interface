@@ -121,3 +121,106 @@ export function normalizeToolArguments(raw: unknown): IDataObject {
 
 	return args;
 }
+
+// ---------------------------------------------------------------------------
+// The HITL wrapper contract
+// ---------------------------------------------------------------------------
+
+/*
+ * n8n core - not this node - generates the HITL wrapper. In
+ * `n8n-core/.../get-input-connection-data.js` (`createHitlToolkit`) every tool
+ * connected to this node is republished under its own name with the schema
+ *
+ *     z.object({
+ *       toolParameters: <the gated tool's own schema>,
+ *       hitlParameters: <this node's $fromAI schema, minus toolParameters/tool>,
+ *     })
+ *
+ * and on invocation `createEngineRequests` hands this node
+ *
+ *     { ...hitlParameters, tool: <tool name>, toolParameters: <the arguments> }
+ *
+ * which is what `$tool.name` and `$tool.parameters` read. So a call missing
+ * `toolParameters` is a model mistake, never a shape this node has to repair:
+ * repairing it would send an approval that does not describe what will run, and
+ * `processHitlResponses` then executes the gated tool on `approved === true`
+ * regardless.
+ */
+
+/** What the model is told when its call does not match the wrapper schema. */
+export const HITL_CONTRACT_HINT =
+	'This tool is an approval wrapper for another tool. Put the underlying tool arguments inside `toolParameters`, and approval settings inside `hitlParameters`. Do not call the underlying tool directly.';
+
+/** n8n's own tool-name rule (`create-node-as-tool.ts`, `handleFromAi`). */
+const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+
+export type ToolParametersCheck =
+	| { status: 'ok'; value: IDataObject }
+	| { status: 'missing' | 'invalid'; reason: string };
+
+/**
+ * Whether `$tool.parameters` carries an argument object for the gated tool.
+ *
+ * `$tool.parameters` arrives as the JSON text of whatever the model put under
+ * `toolParameters`; a key the model never sent resolves to the empty default,
+ * which is why an empty string reads as missing rather than as no arguments.
+ * An empty object is valid - a gated tool may legitimately take none.
+ */
+export function inspectToolParameters(raw: unknown): ToolParametersCheck {
+	if (raw === undefined || raw === null) {
+		return { status: 'missing', reason: '`toolParameters` is required' };
+	}
+
+	let value: unknown = raw;
+
+	if (typeof raw === 'string') {
+		const text = raw.trim();
+
+		if (!text) {
+			return { status: 'missing', reason: '`toolParameters` is required' };
+		}
+
+		try {
+			value = JSON.parse(text);
+		} catch {
+			return { status: 'invalid', reason: '`toolParameters` is not valid JSON' };
+		}
+	}
+
+	if (value === null || value === undefined || value === '') {
+		return { status: 'missing', reason: '`toolParameters` is required' };
+	}
+
+	if (typeof value !== 'object' || Array.isArray(value)) {
+		return {
+			status: 'invalid',
+			reason: `\`toolParameters\` must be an object, received ${Array.isArray(value) ? 'array' : typeof value}`,
+		};
+	}
+
+	return { status: 'ok', value: value as IDataObject };
+}
+
+/**
+ * The tool this call is about, or undefined when there is none.
+ *
+ * Anything that is not a syntactically valid n8n tool name is refused rather
+ * than passed on: an approval has to name the tool it is approving, and a name
+ * this node cannot vouch for is not one.
+ */
+export function readToolIdentity(value: unknown): { name?: string; invalid?: string } {
+	if (value === undefined || value === null) return {};
+
+	if (typeof value !== 'string') {
+		return { invalid: `tool name must be a string, received ${typeof value}` };
+	}
+
+	const name = value.trim();
+	if (!name) return {};
+
+	if (!TOOL_NAME_PATTERN.test(name)) {
+		return { invalid: `tool name ${JSON.stringify(name)} is not a valid tool identifier` };
+	}
+
+	return { name };
+}
