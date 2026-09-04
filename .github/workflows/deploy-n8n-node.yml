@@ -91,8 +91,14 @@ jobs:
 
             echo "Deploying $REF"
 
-            git checkout --detach --quiet "$TARGET"
+            # Reset before checking out, not after. A tracked file modified on
+            # the box - `npm install` rewriting package-lock.json's version
+            # field is the one that keeps happening - makes `git checkout`
+            # refuse to overwrite it and abort, so the reset that would have
+            # cleaned it never runs. This is a deploy target, not a working
+            # copy: whatever is in the tree loses to the ref being deployed.
             git reset --hard "$TARGET"
+            git checkout --detach --force --quiet "$TARGET"
 
             echo "Commit: $(git rev-parse HEAD)"
 
@@ -179,8 +185,14 @@ jobs:
 
             echo "Deploying $REF"
 
-            git checkout --detach --quiet "$TARGET"
+            # Reset before checking out, not after. A tracked file modified on
+            # the box - `npm install` rewriting package-lock.json's version
+            # field is the one that keeps happening - makes `git checkout`
+            # refuse to overwrite it and abort, so the reset that would have
+            # cleaned it never runs. This is a deploy target, not a working
+            # copy: whatever is in the tree loses to the ref being deployed.
             git reset --hard "$TARGET"
+            git checkout --detach --force --quiet "$TARGET"
 
             echo "Commit:  $(git rev-parse HEAD)"
             echo "Version: $(grep -m1 '"version"' package.json | sed -E 's/.*"version": "([^"]+)".*/\1/')"
