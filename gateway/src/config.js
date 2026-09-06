@@ -69,7 +69,19 @@ function buildConfig(env = process.env) {
       // native-audio model is the fallback if this one is withdrawn.
       model: env.VOICE_MODEL || 'models/gemini-3.1-flash-live-preview',
       voiceName: env.VOICE_NAME || 'Puck',
-      instructions: env.VOICE_INSTRUCTIONS || '',
+      // Without a language the model infers one from the audio, and an accented
+      // "hello" is enough to tip it into the wrong language. Say it explicitly.
+      language: env.VOICE_LANGUAGE || 'en-US',
+      // A spoken default, not an empty one. A realtime model with no prompt
+      // writes like a chat model - paragraphs, lists, headings - which is
+      // unbearable read aloud, and it has nothing anchoring it to a language.
+      instructions: env.VOICE_INSTRUCTIONS || [
+        "You are Jarvis, Aman's voice assistant.",
+        'Always speak English unless Aman speaks another language to you first.',
+        'You are being heard, not read: reply in one or two short sentences, in plain spoken prose.',
+        'Never use lists, headings, code, markdown or emoji - none of it can be spoken.',
+        'If a reply would be long, say the short version and offer to go deeper.',
+      ].join(' '),
       // n8n builds the memory snapshot, so the gateway needs no database
       // credentials. Unset means voice runs without memory, which is degraded
       // but perfectly functional.

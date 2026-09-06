@@ -64,6 +64,9 @@ class GeminiLiveEngine {
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: this.config.voiceName } },
+          // Without this the model picks a language from the audio itself, and
+          // an accented greeting is enough to tip it into the wrong one.
+          languageCode: this.config.language,
         },
       },
       // Push-to-talk owns the turn boundaries, so the model must not also

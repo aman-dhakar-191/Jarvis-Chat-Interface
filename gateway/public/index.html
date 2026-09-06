@@ -56,6 +56,12 @@
         <option value="open">Always listening</option>
       </select>
     </label>
+    <label class="voice-mode">
+      <select id="voice-mic" aria-label="Microphone"><option value="">System default</option></select>
+    </label>
+    <label class="voice-mode">
+      <select id="voice-speaker" aria-label="Speaker"><option value="">System default</option></select>
+    </label>
     <p class="voice-hint">State: <code id="voice-state">idle</code></p>
     <p class="voice-transcript" id="voice-transcript" aria-live="polite"></p>
   </section>
@@ -124,6 +130,7 @@
 <!-- Voice layer. Loads after app.js so window.Jarvis exists; the text UI works
      whether or not these load at all. -->
 <script src="/voice/frames.js"></script>
+<script src="/voice/devices.js"></script>
 <script src="/voice/capture.js"></script>
 <script src="/voice/playback.js"></script>
 <script src="/voice/session.js"></script>
