@@ -353,21 +353,22 @@ not pay for it. [Likely] `public/sw.js` needs its cache list extended.
 
 ## 9. Phases
 
-| Phase | Deliverable | Done when |
+| Phase | Deliverable | Status |
 | --- | --- | --- |
-| 1 | Binary audio frames end to end: `capture.js` → gateway → echo back → `playback.js`. No engine. | You hear your own voice with acceptable latency. This de-risks the hardest browser code before any AI is involved. |
-| 2 | Gemini adapter, `VoiceSessionStore`, **transparent reconnect across the 10-min cap** | You can hold a 30-minute conversation. No tools. |
-| 3 | Barge-in: playback flush, upstream cancel, `voice.speech.started` | You can interrupt mid-sentence and it stops inside ~200 ms with context intact. |
-| 4 | Tool bridge, allowlist, slow-call handling, approvals | "Jarvis, check my calendar" runs the existing n8n workflow and is spoken back. |
-| 5 | Transcript mirroring, memory write-back | Voice and text read as one conversation. |
-| 6 | `VOICE_ENABLED` config, compose wiring, docs | Deployed with voice off by default; turning it off fully restores today's behaviour. |
+| 1 | Binary audio frames end to end, echo engine, AudioWorklet capture/playback | **Done.** Verified by ear locally. |
+| 2 | Gemini adapter, session store, transparent reconnect across the ~10 min cap | **Done.** Verified locally; reconnect proven against a fake upstream, not yet observed in a real 10-minute session. |
+| 3 | Barge-in: always-on mode, engine VAD, playback flush | **Done.** Verified in production. |
+| 4 | Tool bridge to n8n, allowlist, slow-call handling, approvals | Not started. |
+| 5 | Transcript mirroring into the text UI, memory write-back | Partial — `voice.transcript` reaches the client and renders on the voice panel, but is not mirrored into the chat transcript or written to memory. |
+| 6 | `VOICE_ENABLED` config, compose wiring, docs | **Done.** Deployed to the VPS on 2026-09-06 with the text path intact. |
 
-Tests: `voice/sessions.js` lifecycle and reconnect, allowlist rejection, tool
-call → n8n payload shape, and a protocol round-trip in the style of
-`test/roundtrip.test.js`. The engine adapter is stubbed — no test should need
-network or an API key.
+Tests: 49 pass. `gateway/test/roundtrip.test.js` — the text-path contract — has
+passed **unmodified** at every phase. That is the gate: if a voice change ever
+requires editing a text test, the promise has been broken.
 
----
+The engine tests run against a fake upstream. They prove the reconnect and
+mode logic, not that the provider accepts our message shapes — production use
+proves the latter.
 
 ## 10. Cost model
 
@@ -413,17 +414,17 @@ you keep the option.
 
 ---
 
-## 12. Open questions for you
+## 12. Open questions
 
-1. ~~Free-tier verification~~ — **closed 2026-09-06.** Native audio returns
-   on a free key; see §1. Remaining unknown is where the *quota* ceiling
-   actually sits, which only sustained use will reveal.
-2. **Activation** — always-on listening, push-to-talk, or a wake word? This
-   changes `ui.js` and the quota model substantially; always-on with server VAD
-   burns session time on silence, which matters more on a free tier than on a
-   paid one.
-3. **Memory write-back** (§7) — every final transcript, or only turns that
-   invoked a tool?
-4. **Tool surface** — does voice get every tool the text agent has, or a
-   reduced set? Anything destructive reached by voice should [Likely] require
-   an approval even when the text path does not.
+1. ~~Free-tier verification~~ — **closed 2026-09-06.** Native audio returns on
+   a free key; see §1. The remaining unknown is where the *quota* ceiling sits,
+   which only sustained use will reveal.
+2. ~~Activation~~ — **closed 2026-09-06.** Both modes shipped: push-to-talk
+   (engine VAD off, no silence on the wire) and always-listening (engine VAD on,
+   genuine barge-in). Chosen per session by the client.
+3. **Memory write-back** — every final transcript, or only turns that invoked a
+   tool? Blocks Phase 5. Partials are definitely wrong; beyond that, undecided.
+4. **Tool surface** — does voice get every tool the text agent has, or a reduced
+   set? Blocks Phase 4. Anything destructive reached by voice should [Likely]
+   require an approval even when the text path does not — a misheard word is a
+   failure mode typing does not have.
