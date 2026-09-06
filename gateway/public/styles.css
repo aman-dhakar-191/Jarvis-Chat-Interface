@@ -714,7 +714,15 @@ body {
   transition: background 120ms ease, transform 80ms ease;
 }
 .vo-talk svg { width: 20px; height: 20px; fill: currentColor; }
-.vo-talk:disabled { opacity: 0.35; cursor: default; }
+/* An enabled hold-to-talk button has to look pressable. At 7% white on a dark
+   ground it read as greyed out, which is exactly what a disabled control looks
+   like - the one state it must never be confused with. */
+.vo-talk:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.vo-talk:not(:disabled):hover { background: rgba(255, 255, 255, 0.2); }
+.vo-talk:disabled { opacity: 0.3; cursor: default; }
 .vo-talk[data-live='true'] {
   background: #10b981;
   color: #04150f;

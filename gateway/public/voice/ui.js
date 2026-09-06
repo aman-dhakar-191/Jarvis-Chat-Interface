@@ -79,9 +79,9 @@
       el.talk.disabled = !(state === 'ready' || state === 'talking');
       el.talk.dataset.live = String(state === 'talking');
       el.talkLabel.textContent = state === 'talking' ? 'Release to send' : 'Hold to talk';
-      // The mode changes how the engine is configured upstream, so it is fixed
-      // once a session is open.
-      if (el.mode) el.mode.disabled = state !== 'idle';
+      // The mode stays switchable while live - changing it restarts the
+      // session underneath, which is the gateway's problem, not the user's.
+      if (el.mode) el.mode.disabled = state === 'starting';
 
       if (state === 'idle') stopPainting();
       else startPainting();
@@ -130,7 +130,7 @@
 
   if (el.mode) {
     el.mode.addEventListener('change', () => session.setMode(el.mode.value));
-    session.setMode(el.mode.value);
+    session.mode = el.mode.value === 'open' ? 'open' : 'ptt';
   }
 
   /* ---------------- open / close ---------------- */

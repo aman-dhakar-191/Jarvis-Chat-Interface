@@ -29,11 +29,19 @@ class VoiceSession {
     this.onState?.(state);
   }
 
-  /** Only meaningful before start(); a live session keeps the mode it opened with. */
-  setMode(mode) {
-    if (this.state !== 'idle') return false;
-    this.mode = mode === 'open' ? 'open' : 'ptt';
-    return true;
+  /**
+   * The engine is configured for one mode when the session opens, so changing
+   * it means opening a new one. Restarting here rather than refusing keeps that
+   * an implementation detail instead of a disabled control the user has to
+   * work out for themselves.
+   */
+  async setMode(mode) {
+    const next = mode === 'open' ? 'open' : 'ptt';
+    if (next === this.mode) return;
+    this.mode = next;
+    if (this.state === 'idle') return;
+    await this.stop();
+    await this.start();
   }
 
   async start() {
