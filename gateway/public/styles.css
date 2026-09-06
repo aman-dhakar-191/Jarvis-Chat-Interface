@@ -747,3 +747,24 @@ body {
   .vo-orb *,
   .vo-core { animation: none !important; transition: none !important; }
 }
+
+.vo-gate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  opacity: 0.65;
+}
+.vo-gate input[type='range'] { width: 140px; accent-color: #6ee7b7; }
+.vo-gate-value {
+  min-width: 3.4em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* Audio held back by the gate. Dimming the orb says "heard, not sent" - the
+   alternative is a threshold set too high looking like a dead microphone. */
+.vo-orb[data-gated='true'] .vo-core {
+  filter: grayscale(0.75) brightness(0.6);
+}
+.vo-orb .vo-core { transition: transform 80ms ease-out, box-shadow 120ms ease-out, filter 160ms ease; }

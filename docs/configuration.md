@@ -187,6 +187,41 @@ curl -s https://jarvis.srv1918051.hstgr.cloud/health | grep -o '"voiceEnabled":[
 docker exec jarvis-gateway printenv | grep VOICE_
 ```
 
+### Background speech
+
+Browser `noiseSuppression` is enabled but will not help with people talking
+nearby: it is tuned for steady noise — fans, hum, traffic — and deliberately
+*preserves* speech, so it treats other voices as signal. Left unchecked, the
+model hears them, and in always-listening mode it may answer them, or switch
+language to match.
+
+What separates you from the room is distance. A mouth 20 cm from the mic is
+roughly 20 dB louder than someone two metres away, so the client applies an
+RMS **noise gate** in the capture worklet and simply does not send frames below
+the threshold. It holds open for 400 ms after dropping below, because speech
+dips between syllables and gating on those dips chops words into fragments —
+which damages transcription more thoroughly than the noise did.
+
+The threshold is a slider in voice mode (`Mic gate`), stored per device,
+default `0.02`, and `0` disables it. It needs tuning against the actual room,
+which is why it is a control rather than a constant. While the gate is holding
+audio back the orb dims — a threshold set too high must look like a closed gate,
+not a dead microphone.
+
+Two things worth knowing:
+
+- **Push-to-talk sidesteps the problem entirely.** Nothing is transmitted
+  unless the button is held, so a noisy room costs nothing. In a shared space
+  it is the right mode regardless of the gate.
+- **A headset beats any of this.** A close-talking or directional mic solves it
+  physically, which no amount of thresholding fully matches.
+
+Speaker recognition — enrolling your voice and rejecting others — is
+deliberately *not* implemented. It needs a speaker-embedding model, an
+enrolment flow and per-utterance comparison on the one path with no latency to
+spare, and it degrades with room acoustics. The gate plus push-to-talk covers
+the same ground for a fraction of the cost.
+
 ### Voice memory
 
 Voice does not retrieve memory per turn. A retrieval tool costs an embedding

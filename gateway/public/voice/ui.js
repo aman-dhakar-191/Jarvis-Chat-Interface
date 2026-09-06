@@ -26,6 +26,8 @@
     talk: document.getElementById('voice-talk'),
     talkLabel: document.getElementById('voice-talk-label'),
     end: document.getElementById('voice-end'),
+    gate: document.getElementById('voice-gate'),
+    gateValue: document.getElementById('voice-gate-value'),
   };
   if (!el.toggle || !el.overlay || !el.orb) return;
 
@@ -41,6 +43,7 @@
   // Levels arrive far faster than the screen refreshes - roughly every 20 ms
   // from capture and every 10 ms from playback. Writing the CSS variable on a
   // rAF instead of per message keeps style recalculation off the audio path.
+  let gateFlash = null;
   let targetLevel = 0;
   let shownLevel = 0;
   let rafId = null;
@@ -96,6 +99,13 @@
       if (session.state !== 'speaking') return;
       targetLevel = Math.min(1, level * 1.6);
     },
+    // Gated audio is not silence - show it, or a threshold set too high looks
+    // like a broken microphone rather than a closed gate.
+    onGated: () => {
+      el.orb.dataset.gated = 'true';
+      clearTimeout(gateFlash);
+      gateFlash = setTimeout(() => { el.orb.dataset.gated = 'false'; }, 250);
+    },
     onTranscript: ({ role, text }) => {
       if (!text) return;
       el.caption.dataset.role = role;
@@ -125,6 +135,28 @@
 
   refreshDevices();
   navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+  /* ---------------- microphone gate ---------------- */
+
+  // Browser noise suppression is built to preserve speech, so it treats other
+  // people talking as signal. What separates you from them is distance - a
+  // mouth 20 cm away is far louder than someone across the room - so a
+  // threshold cuts them without touching you. It needs tuning against the
+  // actual room, which is why it is a control and not a constant.
+  function showGate(value) {
+    if (!el.gateValue) return;
+    el.gateValue.textContent = value > 0 ? Number(value).toFixed(3) : 'off';
+  }
+
+  if (el.gate) {
+    el.gate.value = String(VoiceDevices.gate());
+    showGate(VoiceDevices.gate());
+    el.gate.addEventListener('input', () => {
+      const value = Number(el.gate.value);
+      showGate(value);
+      session.setGate(value);
+    });
+  }
+
   el.mic?.addEventListener('change', () => session.useInput(el.mic.value));
   el.speaker?.addEventListener('change', () => session.useOutput(el.speaker.value));
 

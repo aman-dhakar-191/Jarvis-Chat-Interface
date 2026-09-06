@@ -12,7 +12,7 @@
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const { targetSampleRate, frameSamples } = options.processorOptions;
+    const { targetSampleRate, frameSamples, gateThreshold, gateHoldMs } = options.processorOptions;
     this.target = targetSampleRate;
     this.frameSamples = frameSamples;
     this.ratio = sampleRate / this.target;
@@ -24,8 +24,26 @@ class CaptureProcessor extends AudioWorkletProcessor {
     this.outLength = 0;
     this.muted = true;
 
+    // Noise gate.
+    //
+    // Browser noise suppression is tuned for steady noise - fans, hum - and
+    // deliberately preserves speech, so it treats other people talking as
+    // signal. What separates you from them is distance: a mouth 20 cm away is
+    // roughly 20 dB louder than someone across the room, so an amplitude
+    // threshold can cut them while leaving you untouched.
+    //
+    // 0 disables the gate entirely.
+    this.gate = gateThreshold || 0;
+    // Once open, stay open briefly. Speech dips below any threshold between
+    // syllables, and gating on those dips chops words into fragments - which
+    // ruins transcription far more thoroughly than the noise did.
+    this.holdFrames = Math.max(1, Math.round(((gateHoldMs || 400) / 1000) * (targetSampleRate / frameSamples)));
+    this.holdLeft = 0;
+
     this.port.onmessage = (event) => {
-      if (event.data?.type === 'mute') this.muted = event.data.value !== false;
+      const data = event.data;
+      if (data?.type === 'mute') this.muted = data.value !== false;
+      if (data?.type === 'gate') this.gate = Number(data.value) || 0;
     };
   }
 
@@ -50,8 +68,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
       this.out[this.outLength++] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
 
       if (this.outLength === this.frameSamples) {
-        const frame = this.out.slice(0);
-        this.port.postMessage(frame.buffer, [frame.buffer]);
+        this.emit();
         this.outLength = 0;
       }
       index += this.ratio;
@@ -61,6 +78,32 @@ class CaptureProcessor extends AudioWorkletProcessor {
     this.pending = merged.slice(consumed);
     this.phase = index - consumed;
     return true;
+  }
+
+  emit() {
+    const frame = this.out.slice(0);
+
+    if (this.gate > 0) {
+      // RMS, not peak: a single click should not open the gate.
+      let sum = 0;
+      for (let i = 0; i < frame.length; i += 2) {
+        const sample = frame[i] / 32768;
+        sum += sample * sample;
+      }
+      const rms = Math.sqrt(sum / (frame.length / 2));
+
+      if (rms >= this.gate) this.holdLeft = this.holdFrames;
+      else if (this.holdLeft > 0) this.holdLeft -= 1;
+
+      if (this.holdLeft === 0) {
+        // Report the level anyway, so the UI meter still moves while gated -
+        // otherwise a threshold set too high looks like a broken microphone.
+        this.port.postMessage({ type: 'gated', rms });
+        return;
+      }
+    }
+
+    this.port.postMessage(frame.buffer, [frame.buffer]);
   }
 }
 

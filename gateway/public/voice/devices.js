@@ -14,7 +14,30 @@
  *    default" rather than pretending to work.
  */
 const VoiceDevices = {
-  KEYS: { input: 'jarvis.voice.mic', output: 'jarvis.voice.speaker' },
+  KEYS: {
+    input: 'jarvis.voice.mic',
+    output: 'jarvis.voice.speaker',
+    gate: 'jarvis.voice.gate',
+  },
+
+  // Default gate. Chosen to sit above room tone and conversation a couple of
+  // metres away, but well below close speech. 0 disables it.
+  DEFAULT_GATE: 0.02,
+
+  gate() {
+    try {
+      const stored = localStorage.getItem(this.KEYS.gate);
+      return stored === null ? this.DEFAULT_GATE : Number(stored);
+    } catch {
+      return this.DEFAULT_GATE;
+    }
+  },
+
+  setGate(value) {
+    try {
+      localStorage.setItem(this.KEYS.gate, String(value));
+    } catch { /* private mode */ }
+  },
 
   get(kind) {
     try {

@@ -9,12 +9,14 @@
  * costs hundreds of milliseconds and browsers rate-limit the churn.
  */
 class VoiceCapture {
-  constructor({ sampleRate, frameMs, onFrame, onLevel, deviceId = '' }) {
+  constructor({ sampleRate, frameMs, onFrame, onLevel, onGated, deviceId = '', gate = 0 }) {
     this.sampleRate = sampleRate;
     this.deviceId = deviceId;
     this.frameMs = frameMs;
     this.onFrame = onFrame;
     this.onLevel = onLevel;
+    this.onGated = onGated;
+    this.gate = gate;
     this.context = null;
     this.stream = null;
     this.node = null;
@@ -55,11 +57,20 @@ class VoiceCapture {
       processorOptions: {
         targetSampleRate: this.sampleRate,
         frameSamples: Math.round((this.sampleRate * this.frameMs) / 1000),
+        gateThreshold: this.gate,
+        gateHoldMs: 400,
       },
     });
 
     this.node.port.onmessage = (event) => {
       const pcm = event.data;
+      // A gated frame still reports its level: a threshold set too high must
+      // look like a closed gate, not a dead microphone.
+      if (pcm?.type === 'gated') {
+        this.onLevel?.(pcm.rms);
+        this.onGated?.(pcm.rms);
+        return;
+      }
       if (!(pcm instanceof ArrayBuffer)) return;
       if (this.onLevel) this.onLevel(peakOf(new Int16Array(pcm)));
       this.onFrame(pcm);
@@ -67,6 +78,12 @@ class VoiceCapture {
 
     source.connect(this.node);
     this.started = true;
+  }
+
+  /** Live threshold changes need no restart. 0 disables the gate. */
+  setGate(threshold) {
+    this.gate = Number(threshold) || 0;
+    this.node?.port.postMessage({ type: 'gate', value: this.gate });
   }
 
   /**
