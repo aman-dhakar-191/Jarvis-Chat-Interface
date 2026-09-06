@@ -28,11 +28,16 @@ const HOST = 'generativelanguage.googleapis.com';
 const PATH = '/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 class GeminiLiveEngine {
-  constructor(config, callbacks = {}, { mode = 'ptt' } = {}) {
+  constructor(config, callbacks = {}, { mode = 'ptt', instructions = '', refreshInstructions = null } = {}) {
     this.config = config.voice;
     this.callbacks = callbacks;
     this.name = 'gemini';
     this.mode = mode;
+    this.instructions = instructions || config.voice.instructions || '';
+    // Called before every connect, including reconnects. The upstream link is
+    // replaced roughly every 10 minutes, so this is a free opportunity to pick
+    // up anything learned since the session opened.
+    this.refreshInstructions = refreshInstructions;
     this.inputSampleRate = config.voice.inputSampleRate;
     this.outputSampleRate = config.voice.outputSampleRate;
 
@@ -82,13 +87,26 @@ class GeminiLiveEngine {
       inputAudioTranscription: {},
       outputAudioTranscription: {},
     };
-    if (this.config.instructions) {
-      setup.systemInstruction = { parts: [{ text: this.config.instructions }] };
+    if (this.instructions) {
+      setup.systemInstruction = { parts: [{ text: this.instructions }] };
     }
     return { setup };
   }
 
-  open() {
+  async open() {
+    if (this.refreshInstructions) {
+      try {
+        const fresh = await this.refreshInstructions();
+        if (fresh) this.instructions = fresh;
+      } catch (err) {
+        // Memory is a nice-to-have; never let it stop a session opening.
+        logger.warn('instruction refresh failed', { error: err.message });
+      }
+    }
+    return this.connect();
+  }
+
+  connect() {
     return new Promise((resolve, reject) => {
       let socket;
       try {

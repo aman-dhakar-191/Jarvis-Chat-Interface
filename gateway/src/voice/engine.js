@@ -36,15 +36,15 @@
  */
 const MODES = ['ptt', 'open'];
 
-function createEngine(config, callbacks, { mode = 'ptt' } = {}) {
+function createEngine(config, callbacks, options = {}) {
   const provider = config.voice.provider;
   if (provider === 'echo') {
     const { EchoEngine } = require('./engines/echo');
-    return new EchoEngine(config, callbacks, { mode });
+    return new EchoEngine(config, callbacks, options);
   }
   if (provider === 'gemini') {
     const { GeminiLiveEngine } = require('./engines/gemini');
-    return new GeminiLiveEngine(config, callbacks, { mode });
+    return new GeminiLiveEngine(config, callbacks, options);
   }
   throw new Error(`Unknown VOICE_PROVIDER "${provider}"`);
 }

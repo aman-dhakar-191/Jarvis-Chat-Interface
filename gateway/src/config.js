@@ -70,6 +70,13 @@ function buildConfig(env = process.env) {
       model: env.VOICE_MODEL || 'models/gemini-3.1-flash-live-preview',
       voiceName: env.VOICE_NAME || 'Puck',
       instructions: env.VOICE_INSTRUCTIONS || '',
+      // n8n builds the memory snapshot, so the gateway needs no database
+      // credentials. Unset means voice runs without memory, which is degraded
+      // but perfectly functional.
+      memoryUrl: (env.VOICE_MEMORY_URL || '').trim(),
+      // Deliberately short: this sits between the button press and the session
+      // opening. Starting without memory beats feeling broken.
+      memoryTimeoutMs: int(env, 'VOICE_MEMORY_TIMEOUT_MS', 2500),
       // The rates differ by direction: Gemini takes 16 kHz and returns 24 kHz.
       // One shared rate would sound like chipmunk audio in one direction.
       inputSampleRate: int(env, 'VOICE_INPUT_SAMPLE_RATE', 16000),

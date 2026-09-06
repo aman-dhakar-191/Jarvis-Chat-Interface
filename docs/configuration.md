@@ -159,6 +159,8 @@ exactly as it did before the voice path existed.
 | `VOICE_MODEL` | `models/gemini-3.1-flash-live-preview` | A preview model. Pin it and expect to change it; fallback is `models/gemini-2.5-flash-native-audio-preview-09-2025`. |
 | `VOICE_NAME` | `Puck` | Prebuilt voice. |
 | `VOICE_INSTRUCTIONS` | — | System prompt for the voice agent. |
+| `VOICE_MEMORY_URL` | — | The **Voice Memory Snapshot** n8n webhook. Blank runs voice without memory. |
+| `VOICE_MEMORY_TIMEOUT_MS` | `2500` | Short by intent — this sits between the button press and the session opening. |
 | `VOICE_INPUT_SAMPLE_RATE` | `16000` | What the engine accepts. |
 | `VOICE_OUTPUT_SAMPLE_RATE` | `24000` | What the engine returns. **Not the same as input** — one shared rate sounds like chipmunk audio. |
 | `VOICE_SILENCE_MS` | `700` | Always-on mode only. Below ~500 ms a natural mid-sentence pause reads as end-of-turn. |
@@ -182,6 +184,33 @@ Confirm it took:
 ```bash
 curl -s https://jarvis.srv1918051.hstgr.cloud/health | grep -o '"voiceEnabled":[a-z]*'
 docker exec jarvis-gateway printenv | grep VOICE_
+```
+
+### Voice memory
+
+Voice does not retrieve memory per turn. A retrieval tool costs an embedding
+call plus a vector scan — seconds — which in a spoken conversation is a dead
+pause where the assistant should be talking. Instead the **Voice Memory
+Snapshot** workflow (`XOjMjglzrhSVkpb2`) returns durable facts plus recent
+conversation as one compact block, and the gateway folds it into the session's
+system instruction at start. Recall is then free for the rest of the session.
+
+It is refreshed on every upstream reconnect — the link is replaced roughly
+every 10 minutes anyway — so a long session picks up anything learned since it
+opened.
+
+Every failure is non-fatal: an unreachable or slow snapshot logs a warning and
+the session opens without memory. A voice session with no memory is worth far
+more than no voice session.
+
+Deep or rare lookups still belong in a tool call (Phase 4), not in the
+snapshot — the system instruction sits in context for the whole session, so
+every line is paid for on every turn in latency and audio tokens. The snapshot
+is capped at 3500 characters and drops lowest-confidence facts first.
+
+```bash
+curl -sX POST https://n8n-z44q.srv1918051.hstgr.cloud/webhook/voice-memory-snapshot \
+  -H 'content-type: application/json' -d '{"source":"voice"}'
 ```
 
 The container also needs outbound WSS to `generativelanguage.googleapis.com`.

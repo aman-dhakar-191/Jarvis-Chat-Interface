@@ -14,6 +14,7 @@ const logger = require('../logger');
 const protocol = require('../protocol');
 const frames = require('./frames');
 const { createEngine, MODES } = require('./engine');
+const memory = require('./memory');
 
 const { ERROR_CODES } = protocol;
 
@@ -56,7 +57,16 @@ async function handleSessionStart(ctx, connection, event) {
 
   let engine;
   try {
-    engine = createEngine(config, buildCallbacks(ctx, connection, session), { mode });
+    // Loaded once here, then again on each upstream reconnect - the engine
+    // calls back before every connect, so a 30-minute session picks up
+    // anything learned in the meantime for free.
+    const loadInstructions = async () => memory.buildInstructions(config, await memory.fetchSnapshot(config));
+
+    engine = createEngine(config, buildCallbacks(ctx, connection, session), {
+      mode,
+      instructions: await loadInstructions(),
+      refreshInstructions: loadInstructions,
+    });
     session.engine = engine;
     session.mode = mode;
     await engine.open();

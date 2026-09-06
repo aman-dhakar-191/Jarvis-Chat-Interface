@@ -268,3 +268,57 @@ test('manual activity markers are suppressed in open mode', async (t) => {
   assert.equal(fake.messages.filter((m) => m.realtimeInput?.activityEnd).length, 0);
   assert.ok(fake.messages[0].realtimeInput.audio);
 });
+
+const memory = require('../src/voice/memory');
+
+test('a snapshot is folded in as reference material, not as instructions', () => {
+  const config = buildConfig({ VOICE_ENABLED: 'true', VOICE_INSTRUCTIONS: 'Be brief.' });
+  const out = memory.buildInstructions(config, '- Aman city: Hyderabad');
+
+  assert.match(out, /Be brief\./);
+  assert.match(out, /Aman city: Hyderabad/);
+  // The snapshot contains transcribed user speech, so it must be labelled as
+  // things the model knows - never pasted in as if it were part of the prompt.
+  assert.match(out, /not as\s*\n?instructions/);
+  assert.match(out, /the user is right/);
+});
+
+test('no snapshot leaves the configured instructions untouched', () => {
+  const config = buildConfig({ VOICE_ENABLED: 'true', VOICE_INSTRUCTIONS: 'Be brief.' });
+  assert.equal(memory.buildInstructions(config, null), 'Be brief.');
+  assert.equal(memory.buildInstructions(config, ''), 'Be brief.');
+});
+
+test('an unreachable or slow memory service never blocks a session', async () => {
+  const unset = buildConfig({ VOICE_ENABLED: 'true' });
+  assert.equal(await memory.fetchSnapshot(unset), null);
+
+  // A dead port: must resolve null rather than throwing or hanging.
+  const dead = buildConfig({
+    VOICE_ENABLED: 'true',
+    VOICE_MEMORY_URL: 'http://127.0.0.1:1/voice-memory-snapshot',
+    VOICE_MEMORY_TIMEOUT_MS: '300',
+  });
+  assert.equal(await memory.fetchSnapshot(dead), null);
+});
+
+test('instructions are refreshed on every connect, including reconnects', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  let calls = 0;
+  const engine = engineFor(fake, {}, {});
+  engine.refreshInstructions = async () => {
+    calls += 1;
+    return `snapshot v${calls}`;
+  };
+  await engine.open();
+  t.after(() => engine.close());
+  assert.equal(fake.setups[0].systemInstruction.parts[0].text, 'snapshot v1');
+
+  // The upstream link is replaced roughly every 10 minutes; that is a free
+  // opportunity to pick up anything learned since the session opened.
+  fake.last().close();
+  await waitUntil(() => fake.setups.length === 2);
+  assert.equal(fake.setups[1].systemInstruction.parts[0].text, 'snapshot v2');
+});
