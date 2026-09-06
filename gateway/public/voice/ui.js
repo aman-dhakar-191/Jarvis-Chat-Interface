@@ -16,6 +16,7 @@
     toggle: document.getElementById('voice-toggle'),
     overlay: document.getElementById('voice-overlay'),
     close: document.getElementById('voice-close'),
+    min: document.getElementById('voice-min'),
     orb: document.getElementById('voice-orb'),
     state: document.getElementById('voice-state'),
     caption: document.getElementById('voice-transcript'),
@@ -179,13 +180,37 @@
 
   /* ---------------- open / close ---------------- */
 
+  // Minimising is not closing. The session, the socket and the audio graph all
+  // keep running - the overlay just shrinks to a corner so the transcript
+  // underneath is readable and tappable. This is what makes it possible to
+  // answer an approval without hanging up on Jarvis.
+  let minimised = false;
+  // Only auto-restore what we auto-minimised: a user who minimised on purpose
+  // should not be yanked back to full screen.
+  let minimisedForApproval = false;
+
   function showOverlay(show) {
     el.overlay.hidden = !show;
     el.overlay.setAttribute('aria-hidden', String(!show));
-    document.body.style.overflow = show ? 'hidden' : '';
+    applyChrome();
+  }
+
+  function applyChrome() {
+    const full = !el.overlay.hidden && !minimised;
+    el.overlay.dataset.minimised = String(minimised);
+    // Scroll is only locked while voice covers the page; minimised, the user
+    // needs to scroll the transcript to reach the approval.
+    document.body.style.overflow = full ? 'hidden' : '';
+  }
+
+  function setMinimised(value) {
+    minimised = value;
+    if (!value) minimisedForApproval = false;
+    applyChrome();
   }
 
   async function openVoice() {
+    setMinimised(false);
     showOverlay(true);
     el.caption.textContent = '';
     if (session.state === 'idle') {
@@ -206,9 +231,33 @@
   });
   el.close.addEventListener('click', closeVoice);
   el.end.addEventListener('click', closeVoice);
+  el.min?.addEventListener('click', () => setMinimised(true));
+
+  // Tapping the minimised pill brings voice back.
+  el.overlay.addEventListener('click', (event) => {
+    if (!minimised) return;
+    if (event.target.closest('#voice-close')) return;
+    setMinimised(false);
+  });
+
+  // An approval needs the chat, so get out of its way rather than making the
+  // user work out that voice has to be dismissed first. Restore afterwards,
+  // but only if this was our doing.
+  bridge.onApproval((event) => {
+    if (el.overlay.hidden) return;
+    if (event.event === 'approval.request' && !minimised) {
+      minimisedForApproval = true;
+      setMinimised(true);
+      return;
+    }
+    if (minimisedForApproval && event.event !== 'approval.request') setMinimised(false);
+  });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !el.overlay.hidden) closeVoice();
+    if (event.key !== 'Escape' || el.overlay.hidden) return;
+    // Escape from minimised should not hang up on Jarvis.
+    if (minimised) setMinimised(false);
+    else closeVoice();
   });
 
   /* ---------------- push to talk ---------------- */

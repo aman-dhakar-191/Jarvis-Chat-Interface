@@ -92,6 +92,20 @@ changing engines does not require a client release.
 model attached (`VOICE_PROVIDER=echo`). It is the quickest way to tell a broken
 browser audio pipeline from a broken model connection.
 
+## Voice and approvals
+
+Human-in-the-loop approvals are rendered in the chat transcript, which
+full-screen voice mode covers. When an `approval.request` arrives during a
+voice session the client **minimises voice rather than ending it** — the
+session, socket and audio graph all keep running, and the overlay shrinks to a
+corner so the approval can be read and answered underneath. It restores when
+the approval resolves or expires, but only if it minimised itself: a user who
+minimised deliberately is not yanked back.
+
+Nothing about the approval protocol changes. `approval.request`,
+`approval.respond` and `approval.resolved` behave exactly as they do for text,
+and the answer may come from either channel.
+
 ## Turn-taking modes
 
 `ptt` — push-to-talk. The client owns the turn edges via `voice.activity.*` and

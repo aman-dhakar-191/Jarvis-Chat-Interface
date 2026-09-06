@@ -410,10 +410,12 @@ const voiceBridge = {
   eventListeners: [],
   audioListeners: [],
   disconnectListeners: [],
+  approvalListeners: [],
   socket: () => state.ws,
   onVoiceEvent(fn) { this.eventListeners.push(fn); },
   onVoiceAudio(fn) { this.audioListeners.push(fn); },
   onDisconnect(fn) { this.disconnectListeners.push(fn); },
+  onApproval(fn) { this.approvalListeners.push(fn); },
   note: (text) => systemNote(text),
 };
 window.Jarvis = voiceBridge;
@@ -478,6 +480,12 @@ function connect() {
     if (typeof event.event === 'string' && event.event.startsWith('voice.')) {
       for (const listener of voiceBridge.eventListeners) listener(event);
       return;
+    }
+    // Approvals are rendered in the transcript, which full-screen voice mode
+    // covers. Tell the voice layer so it can get out of the way. The text path
+    // is untouched: handleEvent still runs exactly as before.
+    if (event.event === 'approval.request' || event.event === 'approval.resolved' || event.event === 'approval.expired') {
+      for (const listener of voiceBridge.approvalListeners) listener(event);
     }
     handleEvent(event);
   });
