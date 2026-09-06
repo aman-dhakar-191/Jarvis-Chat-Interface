@@ -28,10 +28,30 @@ for that is a socket pump, not a media server. It is small, boring code.
 So the earlier trade-off was overstated, and the choice reopens. That matters
 because of the second finding:
 
-### Gemini Live has a genuinely free tier
+### Gemini Live has a genuinely free tier — measured, not assumed
 
-[Likely] `gemini-2.5-flash` native audio (Live API) is available on the Gemini
-API **free tier**, with its own RPM/TPM allowance. Reported free-tier shape:
+[Certain] **Verified on 2026-09-06** against a real free-tier key (project
+`Voice Agent`, billing not enabled) with `scratch/live-api-probe.js`. Two
+models returned native audio:
+
+| Model | Result |
+| --- | --- |
+| `models/gemini-3.1-flash-live-preview` | **40,830 bytes of audio** |
+| `models/gemini-2.5-flash-native-audio-preview-09-2025` | **34,560 bytes of audio** |
+| `models/gemini-2.5-flash-preview-native-audio-dialog` | not found (stale name) |
+| `models/gemini-2.0-flash-live-001` | not found (stale name) |
+
+Use **`gemini-3.1-flash-live-preview`** as the default. It is a preview model,
+so pin the name in config and expect to change it; the `2.5` native-audio model
+is the fallback if the preview is withdrawn.
+
+The probe also confirmed the wire protocol: `setup` → `setupComplete` →
+`clientContent` → `serverContent.modelTurn.parts[].inlineData`, with audio
+returned as base64 in `inlineData`. §4 and §5 rest on this rather than on
+secondary sources.
+
+Reported free-tier shape (still unverified — the probe measured access, not
+quota):
 
 - 5–15 requests/minute, 250k tokens/minute, 100–1,000 requests/day
 - Audio-only sessions capped at ~15 minutes; a single connection ~10 minutes
@@ -53,10 +73,14 @@ a reconnect loop, not a blocker.
 
 Certainty notes, because these age badly and I could not verify them at source:
 
-- [Certain] `developers.openai.com` and `ai.google.dev` are blocked by this
-  environment's egress proxy. **Every price and limit above comes from
-  secondary sources.** Confirm free-tier eligibility in AI Studio against your
-  own key before building on it.
+- [Certain] Free-tier access to native audio is **measured** (see above). The
+  *prices* and *quota numbers* are not — `developers.openai.com` and
+  `ai.google.dev` are blocked by this environment's egress proxy, so those come
+  from secondary sources.
+- [Certain] The AI Studio **Rate Limit page cannot verify this** — it reports
+  peak usage per model over 28 days, so it is empty until you have already made
+  calls. The "All models" toggle does not change that. Do not treat an empty
+  table as evidence of anything.
 - [Certain] OpenAI Realtime supports browser-direct WebRTC with a server-minted
   ephemeral key. This is the documented flow.
 - [Likely] Gemini Live has ephemeral tokens but **no browser-direct WebRTC** —
@@ -391,9 +415,9 @@ you keep the option.
 
 ## 12. Open questions for you
 
-1. **Free-tier verification** — before Phase 2, confirm in AI Studio that
-   `gemini-2.5-flash` native audio shows a free tier for your key. Everything
-   in §1 rests on a secondary source.
+1. ~~Free-tier verification~~ — **closed 2026-09-06.** Native audio returns
+   on a free key; see §1. Remaining unknown is where the *quota* ceiling
+   actually sits, which only sustained use will reveal.
 2. **Activation** — always-on listening, push-to-talk, or a wake word? This
    changes `ui.js` and the quota model substantially; always-on with server VAD
    burns session time on silence, which matters more on a free tier than on a
