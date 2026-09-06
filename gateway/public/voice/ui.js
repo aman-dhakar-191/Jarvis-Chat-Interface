@@ -16,6 +16,8 @@
   const meter = document.getElementById('voice-meter');
   const transcript = document.getElementById('voice-transcript');
   const modeSelect = document.getElementById('voice-mode');
+  const micSelect = document.getElementById('voice-mic');
+  const outSelect = document.getElementById('voice-speaker');
   if (!toggle || !talk || !panel) return;
 
   const session = new VoiceSession({
@@ -46,6 +48,24 @@
   bridge.onVoiceEvent((event) => session.onEvent(event));
   bridge.onVoiceAudio((buffer) => session.onAudio(buffer));
 
+  // Labels stay blank until microphone permission is granted, so refresh the
+  // lists after the first session opens as well as on hotplug.
+  async function refreshDevices() {
+    const { inputs, outputs } = await VoiceDevices.list();
+    VoiceDevices.fill(micSelect, inputs, VoiceDevices.get('input'));
+    VoiceDevices.fill(outSelect, outputs, VoiceDevices.get('output'));
+    if (outSelect && !VoiceDevices.outputSelectable()) {
+      outSelect.disabled = true;
+      outSelect.title = 'This browser cannot choose an output device; using the system default.';
+    }
+  }
+
+  refreshDevices();
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+
+  micSelect?.addEventListener('change', () => session.useInput(micSelect.value));
+  outSelect?.addEventListener('change', () => session.useOutput(outSelect.value));
+
   if (modeSelect) {
     modeSelect.addEventListener('change', () => session.setMode(modeSelect.value));
     session.setMode(modeSelect.value);
@@ -53,8 +73,13 @@
 
   toggle.addEventListener('click', async () => {
     panel.hidden = false;
-    if (session.state === 'idle') await session.start();
-    else await session.stop();
+    if (session.state === 'idle') {
+      await session.start();
+      // Permission has now been asked for, so real device names are available.
+      refreshDevices();
+    } else {
+      await session.stop();
+    }
   });
 
   // Hold to talk, by pointer or by space. Pointer capture matters: without it,

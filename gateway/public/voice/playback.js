@@ -7,8 +7,9 @@
  * cleanly once started.
  */
 class VoicePlayback {
-  constructor({ sampleRate, onQueue }) {
+  constructor({ sampleRate, onQueue, sinkId = '' }) {
     this.sampleRate = sampleRate;
+    this.sinkId = sinkId;
     this.onQueue = onQueue;
     this.context = null;
     this.node = null;
@@ -28,6 +29,23 @@ class VoicePlayback {
       if (event.data?.type === 'queued' && this.onQueue) this.onQueue(event.data.samples);
     };
     this.node.connect(this.context.destination);
+    await this.useSink(this.sinkId);
+  }
+
+  /**
+   * Route playback to a chosen output. Unsupported outside Chromium, so a
+   * failure leaves audio on the system default rather than breaking the
+   * session - the user hears Jarvis either way.
+   */
+  async useSink(sinkId) {
+    this.sinkId = sinkId || '';
+    if (!this.context || typeof this.context.setSinkId !== 'function') return false;
+    try {
+      await this.context.setSinkId(this.sinkId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** A user gesture is required before audio may play; call this from a click. */

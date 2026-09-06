@@ -322,3 +322,35 @@ test('instructions are refreshed on every connect, including reconnects', async 
   await waitUntil(() => fake.setups.length === 2);
   assert.equal(fake.setups[1].systemInstruction.parts[0].text, 'snapshot v2');
 });
+
+test('the session declares a language and a spoken-style prompt by default', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  const engine = engineFor(fake, {});
+  await engine.open();
+  t.after(() => engine.close());
+
+  const setup = fake.setups[0];
+  // Without this the model infers a language from the audio, and an accented
+  // greeting is enough to tip it into the wrong one.
+  assert.equal(setup.generationConfig.speechConfig.languageCode, 'en-US');
+
+  const prompt = setup.systemInstruction.parts[0].text;
+  assert.match(prompt, /speak English/i);
+  // A realtime model with no prompt writes like a chat model - lists and
+  // headings - which is unbearable read aloud.
+  assert.match(prompt, /heard, not read/i);
+});
+
+test('an explicit language and prompt override the defaults', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  const engine = engineFor(fake, { VOICE_LANGUAGE: 'hi-IN', VOICE_INSTRUCTIONS: 'Custom.' });
+  await engine.open();
+  t.after(() => engine.close());
+
+  assert.equal(fake.setups[0].generationConfig.speechConfig.languageCode, 'hi-IN');
+  assert.equal(fake.setups[0].systemInstruction.parts[0].text, 'Custom.');
+});

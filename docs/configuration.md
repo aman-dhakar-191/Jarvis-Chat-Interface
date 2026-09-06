@@ -158,7 +158,8 @@ exactly as it did before the voice path existed.
 | `GEMINI_API_KEY` | — | Required for `gemini`. Never reaches the browser — the gateway holds the engine connection. |
 | `VOICE_MODEL` | `models/gemini-3.1-flash-live-preview` | A preview model. Pin it and expect to change it; fallback is `models/gemini-2.5-flash-native-audio-preview-09-2025`. |
 | `VOICE_NAME` | `Puck` | Prebuilt voice. |
-| `VOICE_INSTRUCTIONS` | — | System prompt for the voice agent. |
+| `VOICE_LANGUAGE` | `en-US` | Sent as `speechConfig.languageCode`. **Without it the model picks a language from the audio** — an accented greeting is enough to tip it into the wrong one. |
+| `VOICE_INSTRUCTIONS` | built-in | Blank uses a spoken-style default: English, one or two short sentences, no lists or markdown. An empty prompt makes a realtime model write like a chat model, which is unbearable read aloud. |
 | `VOICE_MEMORY_URL` | — | The **Voice Memory Snapshot** n8n webhook. Blank runs voice without memory. |
 | `VOICE_MEMORY_TIMEOUT_MS` | `2500` | Short by intent — this sits between the button press and the session opening. |
 | `VOICE_INPUT_SAMPLE_RATE` | `16000` | What the engine accepts. |

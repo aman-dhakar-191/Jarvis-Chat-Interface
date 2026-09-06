@@ -111,13 +111,17 @@ class VoiceSession {
     // The two rates differ - the engine takes 16 kHz and returns 24 kHz - so
     // capture and playback are configured separately. Sharing one rate here
     // sounds like chipmunk audio in whichever direction is wrong.
-    this.playback = new VoicePlayback({ sampleRate: outputSampleRate });
+    this.playback = new VoicePlayback({
+      sampleRate: outputSampleRate,
+      sinkId: VoiceDevices.get('output'),
+    });
     await this.playback.start();
     await this.playback.resume();
 
     this.capture = new VoiceCapture({
       sampleRate: inputSampleRate,
       frameMs,
+      deviceId: VoiceDevices.get('input'),
       onLevel: (level) => this.onLevel?.(level),
       onFrame: (pcm) => this.sendAudio(pcm),
     });
@@ -159,6 +163,17 @@ class VoiceSession {
 
     this.capture?.setTransmitting(on);
     this.setState(on ? 'talking' : 'ready');
+  }
+
+  /** Change devices mid-session; both are safe to call while idle. */
+  async useInput(deviceId) {
+    VoiceDevices.set('input', deviceId);
+    await this.capture?.useDevice(deviceId, this.state === 'talking' || this.mode === 'open');
+  }
+
+  async useOutput(deviceId) {
+    VoiceDevices.set('output', deviceId);
+    await this.playback?.useSink(deviceId);
   }
 
   send(event, data = {}) {

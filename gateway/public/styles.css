@@ -578,3 +578,6 @@ body {
 }
 .voice-mode select:disabled { opacity: 0.5; }
 .voice-panel[data-state='listening'] .voice-meter { color: #4ade80; opacity: 1; }
+
+.voice-panel .voice-mode select { max-width: 150px; }
+.voice-panel .voice-mode select:disabled { opacity: 0.4; }

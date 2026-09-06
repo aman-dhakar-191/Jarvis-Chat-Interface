@@ -9,8 +9,9 @@
  * costs hundreds of milliseconds and browsers rate-limit the churn.
  */
 class VoiceCapture {
-  constructor({ sampleRate, frameMs, onFrame, onLevel }) {
+  constructor({ sampleRate, frameMs, onFrame, onLevel, deviceId = '' }) {
     this.sampleRate = sampleRate;
+    this.deviceId = deviceId;
     this.frameMs = frameMs;
     this.onFrame = onFrame;
     this.onLevel = onLevel;
@@ -32,6 +33,9 @@ class VoiceCapture {
         noiseSuppression: true,
         autoGainControl: true,
         channelCount: 1,
+        // `exact` rather than `ideal`: silently recording from the wrong
+        // microphone is worse than failing and falling back visibly.
+        ...(this.deviceId ? { deviceId: { exact: this.deviceId } } : {}),
       },
     });
 
@@ -63,6 +67,18 @@ class VoiceCapture {
 
     source.connect(this.node);
     this.started = true;
+  }
+
+  /**
+   * Switch microphone without dropping the voice session. The graph is rebuilt
+   * because a MediaStreamSource is bound to the stream it was created from.
+   */
+  async useDevice(deviceId, transmitting) {
+    if (deviceId === this.deviceId) return;
+    this.deviceId = deviceId;
+    await this.stop();
+    await this.start();
+    this.setTransmitting(Boolean(transmitting));
   }
 
   /** Push-to-talk. `true` means the microphone is live. */
