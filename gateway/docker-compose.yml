@@ -14,7 +14,8 @@ services:
     image: jarvis-gateway:latest
     container_name: jarvis-gateway
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - .env
     environment:
       PORT: 3000
     # Uncomment to reach the gateway directly on the VPS for debugging, before
