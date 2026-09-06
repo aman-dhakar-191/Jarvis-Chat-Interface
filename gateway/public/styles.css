@@ -554,3 +554,15 @@ body {
 .voice-panel[data-state='ready'] .voice-meter { color: #4ade80; opacity: 0.8; }
 
 .voice-hint { margin: 0; font-size: 12px; opacity: 0.6; }
+
+.voice-transcript {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-transcript[data-role='user'] { opacity: 0.6; font-style: italic; }

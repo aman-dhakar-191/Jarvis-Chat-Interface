@@ -14,6 +14,7 @@
   const panel = document.getElementById('voice-panel');
   const label = document.getElementById('voice-state');
   const meter = document.getElementById('voice-meter');
+  const transcript = document.getElementById('voice-transcript');
   if (!toggle || !talk || !panel) return;
 
   const session = new VoiceSession({
@@ -28,6 +29,12 @@
       meter.style.setProperty('--level', String(Math.min(1, level * 2.2)));
     },
     onNote: (text) => bridge.note(text),
+    onTranscript: ({ role, text }) => {
+      if (!text) return;
+      // Partials, so replace the line rather than appending a new one per token.
+      label.dataset.role = role;
+      transcript.textContent = text;
+    },
   });
 
   bridge.onVoiceEvent((event) => session.onEvent(event));

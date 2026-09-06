@@ -34,6 +34,8 @@ connection is full-duplex, not request/response.
 | `approval.respond` | `{ approvalId, choice?, text?, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. Send `choice` for a decision, `text` for a question. |
 | `voice.session.start` | — | Opens a voice session on this connection. Requires `VOICE_ENABLED=true`. Starting twice replaces the first. |
 | `voice.session.end` | `{ voiceSessionId }` | Idempotent. Disconnecting does the same thing. |
+| `voice.activity.start` | `{ voiceSessionId }` | Push-to-talk pressed. The engine's own VAD is off, so this is what marks the start of a turn. |
+| `voice.activity.end` | `{ voiceSessionId }` | Released. Marks the end of the turn. |
 
 A client **cannot** set its own `userId`. Identity comes from the token
 presented at the handshake; anything you put in `data.userId` is ignored.
@@ -56,7 +58,11 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 | `approval.expired` | `{ approvalId }` |
 | `error` | `{ code, message, messageId? }` |
 | `connection.pong` | `{ echo }` |
-| `voice.session.started` | `{ voiceSessionId, sampleRate, frameMs, engine, expiresAt }` |
+| `voice.session.started` | `{ voiceSessionId, inputSampleRate, outputSampleRate, frameMs, engine, expiresAt }` |
+| `voice.transcript` | `{ voiceSessionId, role, text, final }` |
+| `voice.interrupted` | `{ voiceSessionId }` — **drop buffered playback immediately** |
+| `voice.turn.complete` | `{ voiceSessionId }` |
+| `voice.engine.reconnected` | `{ voiceSessionId, resumed }` — upstream was replaced; the user should hear nothing |
 | `voice.session.ended` | `{ voiceSessionId, reason }` — `client`, `expired`, `flood`, `replaced` or `disconnected` |
 | `voice.error` | `{ code, message, voiceSessionId? }` |
 
@@ -76,11 +82,20 @@ wrong trade on a stream that runs for minutes. The sequence number is not used
 for reordering — a WebSocket is ordered — but it makes drops and duplicates
 visible in logs.
 
-The client learns `sampleRate` from `voice.session.started` rather than
-hard-coding it, so changing engines does not require a client release.
+**The two rates differ.** Gemini takes 16 kHz and returns 24 kHz, so
+`voice.session.started` reports `inputSampleRate` and `outputSampleRate`
+separately. Treating them as one value sounds like chipmunk audio in whichever
+direction is wrong. The client learns both rather than hard-coding them, so
+changing engines does not require a client release.
 
-`engine: "echo"` means the gateway is mirroring your microphone back and no
-model is connected — that is Phase 1. See `docs/voice-design.md`.
+`engine: "echo"` means the gateway is mirroring your microphone back with no
+model attached (`VOICE_PROVIDER=echo`). It is the quickest way to tell a broken
+browser audio pipeline from a broken model connection.
+
+The upstream engine connection is capped at roughly 10 minutes. The gateway
+re-establishes it with a session-resumption handle and emits
+`voice.engine.reconnected`; the conversation continues and the user should hear
+nothing. See `docs/voice-design.md`.
 
 Binary frames sent with no open voice session are dropped silently: that is the
 expected shape of a race between `voice.session.end` and frames already in

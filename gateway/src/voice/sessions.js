@@ -30,7 +30,7 @@ class VoiceSessionStore {
     return id ? this.byId.get(id) || null : null;
   }
 
-  start({ connectionId, userId, sessionId, sampleRate, maxSessionMs, onExpire }) {
+  start({ connectionId, userId, sessionId, maxSessionMs, onExpire }) {
     // Replace rather than reject: a client that reloaded mid-session should be
     // able to start again without waiting for a timeout to clear the old one.
     this.endForConnection(connectionId, 'replaced');
@@ -47,7 +47,11 @@ class VoiceSessionStore {
       connectionId,
       userId,
       sessionId,
-      sampleRate,
+      // Set once the engine is open: the engine, not config, owns the rates.
+      engine: null,
+      inputSampleRate: null,
+      outputSampleRate: null,
+      talking: false,
       startedAt: Date.now(),
       expiresAt: Date.now() + maxSessionMs,
       inSequence: 0,

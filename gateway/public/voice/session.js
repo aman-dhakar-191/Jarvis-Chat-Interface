@@ -8,11 +8,12 @@
  * keeps voice and text on one identity, one sessionId and one reconnect story.
  */
 class VoiceSession {
-  constructor({ bridge, onState, onLevel, onNote }) {
+  constructor({ bridge, onState, onLevel, onNote, onTranscript }) {
     this.bridge = bridge;
     this.onState = onState;
     this.onLevel = onLevel;
     this.onNote = onNote;
+    this.onTranscript = onTranscript;
     this.voiceSessionId = null;
     this.capture = null;
     this.playback = null;
@@ -33,12 +34,7 @@ class VoiceSession {
       return;
     }
     this.setState('starting');
-    socket.send(JSON.stringify({
-      id: `evt_${Math.random().toString(36).slice(2)}`,
-      type: 'event',
-      event: 'voice.session.start',
-      data: {},
-    }));
+    this.send('voice.session.start');
   }
 
   /** Called by the bridge for every `voice.*` event from the gateway. */
@@ -49,9 +45,31 @@ class VoiceSession {
       this.setState('ready');
       this.onNote?.(
         event.data.engine === 'echo'
-          ? 'Voice transport is up. Phase 1 echoes your microphone back — there is no model yet.'
-          : 'Voice session ready.',
+          ? 'Echo mode: your microphone is mirrored back, with no model attached.'
+          : 'Voice session ready. Hold to talk.',
       );
+      return;
+    }
+
+    if (event.event === 'voice.interrupted') {
+      // Drop what is queued rather than letting it play out. Cancelling the
+      // model upstream is not enough - buffered audio would still be spoken,
+      // which is the usual reason an assistant keeps talking after being
+      // interrupted.
+      this.playback?.flush();
+      return;
+    }
+
+    if (event.event === 'voice.transcript') {
+      this.onTranscript?.(event.data);
+      return;
+    }
+
+    if (event.event === 'voice.turn.complete') return;
+
+    if (event.event === 'voice.engine.reconnected') {
+      // The upstream connection is capped and gets replaced periodically. The
+      // user should hear nothing, so this is not surfaced as a banner.
       return;
     }
 
@@ -69,13 +87,16 @@ class VoiceSession {
     }
   }
 
-  async openAudio({ sampleRate, frameMs }) {
-    this.playback = new VoicePlayback({ sampleRate });
+  async openAudio({ inputSampleRate, outputSampleRate, frameMs }) {
+    // The two rates differ - the engine takes 16 kHz and returns 24 kHz - so
+    // capture and playback are configured separately. Sharing one rate here
+    // sounds like chipmunk audio in whichever direction is wrong.
+    this.playback = new VoicePlayback({ sampleRate: outputSampleRate });
     await this.playback.start();
     await this.playback.resume();
 
     this.capture = new VoiceCapture({
-      sampleRate,
+      sampleRate: inputSampleRate,
       frameMs,
       onLevel: (level) => this.onLevel?.(level),
       onFrame: (pcm) => this.sendAudio(pcm),
@@ -105,20 +126,31 @@ class VoiceSession {
 
   setTransmitting(on) {
     if (this.state !== 'ready' && this.state !== 'talking') return;
+
+    // Push-to-talk is manual turn detection: the engine's own VAD is off, so
+    // these edges are what tells it a turn began and ended.
+    if (on) this.playback?.flush(); // barge-in, locally, before the round trip
+    this.send(on ? 'voice.activity.start' : 'voice.activity.end', {
+      voiceSessionId: this.voiceSessionId,
+    });
+
     this.capture?.setTransmitting(on);
     this.setState(on ? 'talking' : 'ready');
   }
 
-  async stop() {
+  send(event, data = {}) {
     const socket = this.bridge.socket();
-    if (socket && socket.readyState === WebSocket.OPEN && this.voiceSessionId) {
-      socket.send(JSON.stringify({
-        id: `evt_${Math.random().toString(36).slice(2)}`,
-        type: 'event',
-        event: 'voice.session.end',
-        data: { voiceSessionId: this.voiceSessionId },
-      }));
-    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      id: `evt_${Math.random().toString(36).slice(2)}`,
+      type: 'event',
+      event,
+      data,
+    }));
+  }
+
+  async stop() {
+    if (this.voiceSessionId) this.send('voice.session.end', { voiceSessionId: this.voiceSessionId });
     await this.teardown();
   }
 

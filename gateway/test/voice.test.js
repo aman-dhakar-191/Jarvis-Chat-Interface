@@ -7,7 +7,10 @@ const { startGateway, TestClient } = require('./helpers');
 const frames = require('../src/voice/frames');
 
 const TOKEN = 'test-token-abc';
-const VOICE_ON = { AUTH_TOKENS: `${TOKEN}:aman`, VOICE_ENABLED: 'true' };
+// Every test here runs the echo engine: it exercises the whole voice path -
+// session lifecycle, framing, flood control, teardown - with no API key and no
+// network. The Gemini engine is covered separately by its own unit tests.
+const VOICE_ON = { AUTH_TOKENS: `${TOKEN}:aman`, VOICE_ENABLED: 'true', VOICE_PROVIDER: 'echo' };
 
 /** A client that keeps binary frames as well as JSON ones. */
 class VoiceClient extends TestClient {
@@ -93,7 +96,9 @@ test('voice session starts and echoes microphone audio back', async (t) => {
   client.send({ id: 'evt_v1', event: 'voice.session.start' });
   const started = await client.waitForEvent('voice.session.started');
   assert.match(started.data.voiceSessionId, /^voice_/);
-  assert.equal(started.data.sampleRate, 16000);
+  assert.equal(started.data.inputSampleRate, 16000);
+  // Echo returns what it was given, so both rates match. Gemini's do not.
+  assert.equal(started.data.outputSampleRate, 16000);
   assert.equal(started.data.frameMs, 20);
   assert.equal(started.data.engine, 'echo');
   assert.equal(gateway.voiceSessions.size, 1);

@@ -221,7 +221,8 @@ function createServer(config) {
     ws.on('close', () => {
       registry.remove(connection.id);
       executions.dropConnection(connection.id);
-      voiceSessions.endForConnection(connection.id, 'disconnected');
+      const voiceSession = voiceSessions.endForConnection(connection.id, 'disconnected');
+      voiceSession?.engine?.close().catch(() => {});
       logger.info('client disconnected', { connectionId: connection.id, total: registry.size });
     });
 
@@ -250,6 +251,7 @@ function createServer(config) {
     clearInterval(heartbeat);
     executions.clear();
     approvals.clear();
+    for (const voiceSession of voiceSessions.byId.values()) voiceSession.engine?.close().catch(() => {});
     voiceSessions.clear();
     registry.closeAll();
     await new Promise((resolve) => wss.close(resolve));
