@@ -56,6 +56,39 @@ function buildConfig(env = process.env) {
         : (env.N8N_WEBHOOK_URL || '').replace('/webhook/', '/webhook-test/'),
     },
     approvalTimeoutMs: int(env, 'APPROVAL_TIMEOUT_MS', 3600000),
+    // The voice path. Off unless explicitly enabled, so an existing deployment
+    // that pulls this version behaves exactly as it did before.
+    voice: {
+      enabled: (env.VOICE_ENABLED || '').toLowerCase() === 'true',
+      // `echo` mirrors the microphone back with no model and no API key. It is
+      // the fastest way to tell a broken browser audio pipeline from a broken
+      // model connection, so it stays available rather than being deleted.
+      provider: (env.VOICE_PROVIDER || 'gemini').toLowerCase(),
+      apiKey: env.GEMINI_API_KEY || env.VOICE_API_KEY || '',
+      // A preview model: pin it here and expect to change it. The 2.5
+      // native-audio model is the fallback if this one is withdrawn.
+      model: env.VOICE_MODEL || 'models/gemini-3.1-flash-live-preview',
+      voiceName: env.VOICE_NAME || 'Puck',
+      instructions: env.VOICE_INSTRUCTIONS || '',
+      // The rates differ by direction: Gemini takes 16 kHz and returns 24 kHz.
+      // One shared rate would sound like chipmunk audio in one direction.
+      inputSampleRate: int(env, 'VOICE_INPUT_SAMPLE_RATE', 16000),
+      outputSampleRate: int(env, 'VOICE_OUTPUT_SAMPLE_RATE', 24000),
+      frameMs: int(env, 'VOICE_FRAME_MS', 20),
+      // Always-on mode only. Below ~500 ms of trailing silence, a natural pause
+      // mid-sentence is treated as the end of a turn, which fragments both the
+      // transcript and the reply.
+      silenceDurationMs: int(env, 'VOICE_SILENCE_MS', 700),
+      prefixPaddingMs: int(env, 'VOICE_PREFIX_PADDING_MS', 300),
+      maxSessionMs: int(env, 'VOICE_MAX_SESSION_MS', 1800000),
+      // Upstream drops a connection roughly every 10 minutes; session
+      // resumption makes that invisible, but a revoked key never recovers, so
+      // reconnects are bounded rather than infinite.
+      maxReconnects: int(env, 'VOICE_MAX_RECONNECTS', 20),
+      // 16 kHz PCM16 is 32 kB/s. The default leaves ~3x headroom for bursts
+      // after a stall without letting a stuck client saturate the socket.
+      maxAudioBytesPerSecond: int(env, 'VOICE_MAX_AUDIO_BYTES_PER_SECOND', 96000),
+    },
     pushSecret: env.PUSH_SECRET || '',
     // The conversation key handed to n8n. Stable by design: the same value on
     // every device and across reinstalls, so Jarvis keeps one memory thread.
@@ -91,6 +124,12 @@ function buildConfig(env = process.env) {
   }
   if (!config.pushSecret) {
     config.warnings.push('PUSH_SECRET is empty - POST /api/push is disabled.');
+  }
+  if (config.voice.enabled && config.voice.provider === 'gemini' && !config.voice.apiKey) {
+    config.warnings.push('VOICE_ENABLED=true with VOICE_PROVIDER=gemini but no GEMINI_API_KEY - voice sessions will be refused. Set VOICE_PROVIDER=echo to test the transport without a key.');
+  }
+  if (config.voice.enabled && config.limits.maxMessageBytes < 4096) {
+    config.warnings.push('MAX_MESSAGE_BYTES is very small - voice audio frames may be rejected by the socket.');
   }
   if (config.n8n.responseMode === 'async' && !config.pushSecret) {
     config.warnings.push('N8N_RESPONSE_MODE=async requires PUSH_SECRET, otherwise no reply can ever arrive.');

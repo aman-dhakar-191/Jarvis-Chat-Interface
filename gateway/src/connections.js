@@ -20,6 +20,13 @@ class Connection {
     this.ws.send(JSON.stringify(payload));
     return true;
   }
+
+  /** Raw binary, for voice audio frames. Text events never use this. */
+  sendBinary(buffer) {
+    if (this.ws.readyState !== this.ws.OPEN) return false;
+    this.ws.send(buffer, { binary: true });
+    return true;
+  }
 }
 
 class ConnectionRegistry {

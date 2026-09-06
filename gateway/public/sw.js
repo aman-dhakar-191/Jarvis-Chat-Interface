@@ -1,7 +1,10 @@
 /* App-shell cache so the UI opens instantly and works offline.
    The WebSocket and /api are never cached - they must always hit the network. */
-const CACHE = 'jarvis-shell-v1';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icons/icon-192.png'];
+const CACHE = 'jarvis-shell-v2';
+const SHELL = [
+  '/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icons/icon-192.png',
+  '/voice/frames.js', '/voice/capture.js', '/voice/playback.js', '/voice/session.js', '/voice/ui.js',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

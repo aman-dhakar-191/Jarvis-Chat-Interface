@@ -45,9 +45,27 @@
 
   <div id="banner" class="banner" hidden></div>
 
+  <section id="voice-panel" class="voice-panel" data-state="idle" hidden>
+    <button id="voice-talk" class="voice-talk" type="button" disabled>
+      <span class="voice-meter" id="voice-meter" aria-hidden="true"></span>
+      <span>Hold to talk</span>
+    </button>
+    <label class="voice-mode">
+      <select id="voice-mode">
+        <option value="ptt">Hold to talk</option>
+        <option value="open">Always listening</option>
+      </select>
+    </label>
+    <p class="voice-hint">State: <code id="voice-state">idle</code></p>
+    <p class="voice-transcript" id="voice-transcript" aria-live="polite"></p>
+  </section>
+
   <form id="composer" class="composer">
     <textarea id="input" rows="1" placeholder="Message Jarvis…" autocomplete="off"
               autocapitalize="sentences" enterkeyhint="send"></textarea>
+    <button id="voice-toggle" class="voice-toggle" type="button" aria-pressed="false" aria-label="Voice">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 003-3V6a3 3 0 00-6 0v5a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.9V21h2v-3.1A7 7 0 0019 11z"/></svg>
+    </button>
     <button id="send" class="send" type="submit" aria-label="Send">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12L4 4l3.5 8L4 20z"/></svg>
     </button>
@@ -103,5 +121,12 @@
 </dialog>
 
 <script src="/app.js"></script>
+<!-- Voice layer. Loads after app.js so window.Jarvis exists; the text UI works
+     whether or not these load at all. -->
+<script src="/voice/frames.js"></script>
+<script src="/voice/capture.js"></script>
+<script src="/voice/playback.js"></script>
+<script src="/voice/session.js"></script>
+<script src="/voice/ui.js"></script>
 </body>
 </html>

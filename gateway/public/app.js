@@ -402,6 +402,22 @@ function setStatus(status, label) {
 
 /* ---------------- connection ---------------- */
 
+/* ---------------- voice bridge ---------------- *
+ * The voice layer needs the socket and the voice events, and nothing else.
+ * Keeping the seam this narrow is what lets the text path stay unchanged.
+ */
+const voiceBridge = {
+  eventListeners: [],
+  audioListeners: [],
+  disconnectListeners: [],
+  socket: () => state.ws,
+  onVoiceEvent(fn) { this.eventListeners.push(fn); },
+  onVoiceAudio(fn) { this.audioListeners.push(fn); },
+  onDisconnect(fn) { this.disconnectListeners.push(fn); },
+  note: (text) => systemNote(text),
+};
+window.Jarvis = voiceBridge;
+
 function gatewayUrl() {
   const configured = store.get(KEYS.url).trim();
   if (!configured) {
@@ -434,6 +450,9 @@ function connect() {
     return;
   }
   state.ws = socket;
+  // Voice audio arrives as raw bytes; ArrayBuffer avoids a Blob round trip on
+  // every 20 ms frame. Text frames are strings either way.
+  socket.binaryType = 'arraybuffer';
 
   socket.addEventListener('open', () => {
     state.attempt = 0;
@@ -444,10 +463,20 @@ function connect() {
   });
 
   socket.addEventListener('message', (frame) => {
+    // Binary frames are voice audio. Routed out first so the text path below
+    // sees exactly the frames it always saw.
+    if (frame.data instanceof ArrayBuffer) {
+      for (const listener of voiceBridge.audioListeners) listener(frame.data);
+      return;
+    }
     let event;
     try {
       event = JSON.parse(frame.data);
     } catch {
+      return;
+    }
+    if (typeof event.event === 'string' && event.event.startsWith('voice.')) {
+      for (const listener of voiceBridge.eventListeners) listener(event);
       return;
     }
     handleEvent(event);
@@ -455,6 +484,7 @@ function connect() {
 
   socket.addEventListener('close', (event) => {
     state.ws = null;
+    for (const listener of voiceBridge.disconnectListeners) listener();
     failPending('Connection lost before Jarvis replied.');
     if (state.manualClose) {
       state.manualClose = false;

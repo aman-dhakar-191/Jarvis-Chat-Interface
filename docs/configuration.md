@@ -146,6 +146,49 @@ container restarts.
 | `MAX_INFLIGHT_PER_CONNECTION` | `4` | Concurrent messages before `RATE_LIMITED`. |
 | `HEARTBEAT_INTERVAL_MS` | `30000` | Ping interval; silent sockets are dropped and the client reconnects. |
 
+### Voice
+
+Voice is off unless `VOICE_ENABLED=true`. With it off the gateway behaves
+exactly as it did before the voice path existed.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `VOICE_ENABLED` | `false` | Master switch. |
+| `VOICE_PROVIDER` | `gemini` | `gemini` connects a realtime model; `echo` mirrors your microphone back with no model and no API key. |
+| `GEMINI_API_KEY` | — | Required for `gemini`. Never reaches the browser — the gateway holds the engine connection. |
+| `VOICE_MODEL` | `models/gemini-3.1-flash-live-preview` | A preview model. Pin it and expect to change it; fallback is `models/gemini-2.5-flash-native-audio-preview-09-2025`. |
+| `VOICE_NAME` | `Puck` | Prebuilt voice. |
+| `VOICE_INSTRUCTIONS` | — | System prompt for the voice agent. |
+| `VOICE_INPUT_SAMPLE_RATE` | `16000` | What the engine accepts. |
+| `VOICE_OUTPUT_SAMPLE_RATE` | `24000` | What the engine returns. **Not the same as input** — one shared rate sounds like chipmunk audio. |
+| `VOICE_SILENCE_MS` | `700` | Always-on mode only. Below ~500 ms a natural mid-sentence pause reads as end-of-turn. |
+| `VOICE_PREFIX_PADDING_MS` | `300` | Always-on mode only. |
+| `VOICE_MAX_SESSION_MS` | `1800000` | Gateway-side session cap. |
+| `VOICE_MAX_RECONNECTS` | `20` | Upstream drops a connection roughly every 10 minutes and is resumed transparently; bounded so a revoked key surfaces instead of looping. |
+| `VOICE_MAX_AUDIO_BYTES_PER_SECOND` | `96000` | Flood guard. 16 kHz PCM16 is ~32 kB/s. |
+
+**On the VPS, these go in `gateway/.env` over SSH** — the deploy pipeline does
+`git reset --hard`, which never touches `.env` because it is gitignored. That
+also means a deploy alone does **not** turn voice on: add the variables first,
+then `docker compose up -d --force-recreate`.
+
+Watch for the Hostinger Docker Manager trap above: if the panel has rewritten
+`docker-compose.yml` into an `environment:` block, every `VOICE_*` variable is
+missing from that block and silently never reaches the container. `.env` will
+look perfectly correct while voice refuses to start.
+
+Confirm it took:
+
+```bash
+curl -s https://jarvis.srv1918051.hstgr.cloud/health | grep -o '"voiceEnabled":[a-z]*'
+docker exec jarvis-gateway printenv | grep VOICE_
+```
+
+The container also needs outbound WSS to `generativelanguage.googleapis.com`.
+Normal Docker bridge egress covers this, but a locked-down egress policy would
+show up as `VOICE_UNAVAILABLE` on every session start with a connect error in
+the logs.
+
 ## Test URL vs Production URL
 
 n8n exposes every webhook twice, and the difference trips everyone up once.
@@ -246,8 +289,12 @@ docker ps --filter name=jarvis-gateway --format '{{.Names}}\t{{.Status}}'
 
 ```json
 { "ok": true, "connections": 1, "pendingExecutions": 0, "pendingApprovals": 0,
+  "voiceEnabled": true, "voiceSessions": 0,
   "authEnabled": true, "n8nConfigured": true, "responseMode": "sync" }
 ```
+
+`voiceEnabled` is the fastest check that a voice deploy actually took;
+`voiceSessions` counts live audio sessions.
 
 Logs are one JSON object per line, so they grep well:
 
