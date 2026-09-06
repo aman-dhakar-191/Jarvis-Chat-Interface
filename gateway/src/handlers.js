@@ -3,6 +3,7 @@
 const logger = require('./logger');
 const protocol = require('./protocol');
 const n8n = require('./n8n');
+const voice = require('./voice');
 
 const { ERROR_CODES } = protocol;
 
@@ -287,6 +288,10 @@ function handlePing(ctx, connection, event) {
 }
 
 async function dispatch(ctx, connection, event) {
+  // Voice is a separate path with its own dispatch. Routed before the switch so
+  // the text protocol below stays exactly as it was.
+  if (event.event.startsWith('voice.')) return voice.handle(ctx, connection, event);
+
   switch (event.event) {
     case 'session.join':
       return handleSessionJoin(ctx, connection, event);

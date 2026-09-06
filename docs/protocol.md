@@ -32,6 +32,8 @@ connection is full-duplex, not request/response.
 | `user.message` | `{ messageId?, content, useTestWebhook? }` | `content` is required, ≤ 8000 chars. A `messageId` is generated if omitted. `useTestWebhook: true` routes just this message to n8n's `/webhook-test/` path. |
 | `connection.ping` | anything | Answered with `connection.pong`. |
 | `approval.respond` | `{ approvalId, choice?, text?, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. Send `choice` for a decision, `text` for a question. |
+| `voice.session.start` | — | Opens a voice session on this connection. Requires `VOICE_ENABLED=true`. Starting twice replaces the first. |
+| `voice.session.end` | `{ voiceSessionId }` | Idempotent. Disconnecting does the same thing. |
 
 A client **cannot** set its own `userId`. Identity comes from the token
 presented at the handshake; anything you put in `data.userId` is ignored.
@@ -54,6 +56,35 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 | `approval.expired` | `{ approvalId }` |
 | `error` | `{ code, message, messageId? }` |
 | `connection.pong` | `{ echo }` |
+| `voice.session.started` | `{ voiceSessionId, sampleRate, frameMs, engine, expiresAt }` |
+| `voice.session.ended` | `{ voiceSessionId, reason }` — `client`, `expired`, `flood`, `replaced` or `disconnected` |
+| `voice.error` | `{ code, message, voiceSessionId? }` |
+
+## Voice audio frames
+
+Audio does not travel as JSON. While a voice session is open, **binary**
+WebSocket frames on the same connection carry PCM16:
+
+```text
+byte  0      frame type   0x01 client mic audio, 0x02 assistant audio
+bytes 1..4   uint32 BE    sequence number, per direction
+bytes 5..    PCM16 LE, mono, at the session's sampleRate
+```
+
+Base64-in-JSON would cost ~33% bandwidth and a parse every 20 ms, which is the
+wrong trade on a stream that runs for minutes. The sequence number is not used
+for reordering — a WebSocket is ordered — but it makes drops and duplicates
+visible in logs.
+
+The client learns `sampleRate` from `voice.session.started` rather than
+hard-coding it, so changing engines does not require a client release.
+
+`engine: "echo"` means the gateway is mirroring your microphone back and no
+model is connected — that is Phase 1. See `docs/voice-design.md`.
+
+Binary frames sent with no open voice session are dropped silently: that is the
+expected shape of a race between `voice.session.end` and frames already in
+flight.
 
 Acknowledgements are their own frame shape:
 

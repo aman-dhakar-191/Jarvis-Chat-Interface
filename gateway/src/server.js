@@ -11,6 +11,8 @@ const { authenticate, originAllowed, safeEqual } = require('./auth');
 const { Connection, ConnectionRegistry } = require('./connections');
 const { ExecutionStore } = require('./executions');
 const { ApprovalStore, resumeUrlAllowed } = require('./approvals');
+const { VoiceSessionStore } = require('./voice/sessions');
+const voice = require('./voice');
 const { dispatch } = require('./handlers');
 
 const { ERROR_CODES } = protocol;
@@ -19,7 +21,8 @@ function createServer(config) {
   const registry = new ConnectionRegistry();
   const executions = new ExecutionStore();
   const approvals = new ApprovalStore();
-  const ctx = { config, registry, executions, approvals };
+  const voiceSessions = new VoiceSessionStore();
+  const ctx = { config, registry, executions, approvals, voiceSessions };
 
   const app = express();
   app.disable('x-powered-by');
@@ -31,6 +34,8 @@ function createServer(config) {
       connections: registry.size,
       pendingExecutions: executions.byMessageId.size,
       pendingApprovals: approvals.size,
+      voiceEnabled: config.voice.enabled,
+      voiceSessions: voiceSessions.size,
       authEnabled: config.authEnabled,
       n8nConfigured: Boolean(config.n8n.webhookUrl),
       responseMode: config.n8n.responseMode,
@@ -185,7 +190,18 @@ function createServer(config) {
       connection.isAlive = true;
     });
 
-    ws.on('message', async (raw) => {
+    ws.on('message', async (raw, isBinary) => {
+      // Binary frames are voice audio and never text. Routed out before
+      // parseInbound so the text path sees exactly the frames it always saw.
+      if (isBinary) {
+        try {
+          return voice.handleAudio(ctx, connection, raw);
+        } catch (err) {
+          logger.error('voice audio handler threw', { connectionId: connection.id, error: err.stack });
+          return;
+        }
+      }
+
       const parsed = protocol.parseInbound(raw, { maxBytes: config.limits.maxMessageBytes });
       if (!parsed.ok) {
         return connection.send(protocol.makeError(parsed.code, parsed.message, { sessionId: connection.sessionId }));
@@ -205,6 +221,7 @@ function createServer(config) {
     ws.on('close', () => {
       registry.remove(connection.id);
       executions.dropConnection(connection.id);
+      voiceSessions.endForConnection(connection.id, 'disconnected');
       logger.info('client disconnected', { connectionId: connection.id, total: registry.size });
     });
 
@@ -233,12 +250,13 @@ function createServer(config) {
     clearInterval(heartbeat);
     executions.clear();
     approvals.clear();
+    voiceSessions.clear();
     registry.closeAll();
     await new Promise((resolve) => wss.close(resolve));
     await new Promise((resolve) => server.close(resolve));
   }
 
-  return { app, server, wss, registry, executions, approvals, close };
+  return { app, server, wss, registry, executions, approvals, voiceSessions, close };
 }
 
 module.exports = { createServer };
