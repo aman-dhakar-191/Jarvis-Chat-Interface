@@ -42,24 +42,46 @@ models returned native audio:
 | `models/gemini-2.0-flash-live-001` | not found (stale name) |
 
 Use **`gemini-3.1-flash-live-preview`** as the default. It is a preview model,
-so pin the name in config and expect to change it; the `2.5` native-audio model
-is the fallback if the preview is withdrawn.
+so pin the name in config and expect to change it.
+
+The `2.5` native-audio model is not merely a fallback: on the free tier it
+carries **1M TPM against the 3-series' 65K** (see the quota table below). If
+long sessions start hitting rate limits, switching to it buys 15× the headroom
+for one config value — `VOICE_MODEL`. Whether the newer model's quality is
+worth a 15× smaller budget is a judgement to make against real usage, not in
+advance.
 
 The probe also confirmed the wire protocol: `setup` → `setupComplete` →
 `clientContent` → `serverContent.modelTurn.parts[].inlineData`, with audio
 returned as base64 in `inlineData`. §4 and §5 rest on this rather than on
 secondary sources.
 
-Reported free-tier shape (still unverified — the probe measured access, not
-quota):
+### Free-tier quota — measured 2026-09-06
 
-- 5–15 requests/minute, 250k tokens/minute, 100–1,000 requests/day
-- Audio-only sessions capped at ~15 minutes; a single connection ~10 minutes
+[Certain] Read from the AI Studio rate-limit table on the live free-tier key.
+**This corrects an earlier draft**, which quoted 5–15 RPM and 100–1,000 RPD
+from secondary sources. Those are the *text* model limits. Live API models are
+governed differently:
 
-For one person talking to their own assistant, a "request" is a *session*, not
-an utterance. 100–1,000 sessions/day is not a constraint you will feel. The
-10-minute connection cap is real and must be engineered around (§7), but it is
-a reconnect loop, not a blocker.
+| Live API model | RPM | TPM | RPD |
+| --- | --- | --- | --- |
+| Gemini 2.5 Flash Native Audio Dialog | Unlimited | **1M** | Unlimited |
+| Gemini 3 Flash Live | Unlimited | **65K** | Unlimited |
+| Gemini 3.5 Live Translate | Unlimited | 20K | Unlimited |
+| Gemini 3.5 Transcribe Live | Unlimited | 20K | Unlimited |
+
+**Requests per minute and per day are unlimited.** The only ceiling that binds
+is **tokens per minute**, and it differs by 15× between the two models we could
+use.
+
+This matters more than it looks. In a realtime session the accumulated context
+is re-processed as the conversation grows, so TPM climbs with session length
+rather than staying flat. Light testing already showed a 906 TPM peak against
+the 65K ceiling on Gemini 3 Flash Live — comfortable now, but the headroom is
+consumed by long sessions, and the memory snapshot in §7 adds to every turn.
+
+The 15-minute session and ~10-minute connection caps are real and engineered
+around (§7); they are a reconnect loop, not a blocker.
 
 ### The full comparison
 
@@ -416,9 +438,10 @@ you keep the option.
 
 ## 12. Open questions
 
-1. ~~Free-tier verification~~ — **closed 2026-09-06.** Native audio returns on
-   a free key; see §1. The remaining unknown is where the *quota* ceiling sits,
-   which only sustained use will reveal.
+1. ~~Free-tier verification~~ and ~~quota ceiling~~ — **both closed
+   2026-09-06.** Native audio returns on a free key, and the rate-limit table
+   shows Live API requests are unlimited per minute and per day; only TPM
+   binds. See §1.
 2. ~~Activation~~ — **closed 2026-09-06.** Both modes shipped: push-to-talk
    (engine VAD off, no silence on the wire) and always-listening (engine VAD on,
    genuine barge-in). Chosen per session by the client.
