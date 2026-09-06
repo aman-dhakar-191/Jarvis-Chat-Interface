@@ -7,10 +7,11 @@
  * cleanly once started.
  */
 class VoicePlayback {
-  constructor({ sampleRate, onQueue, sinkId = '' }) {
+  constructor({ sampleRate, onQueue, onLevel, sinkId = '' }) {
     this.sampleRate = sampleRate;
     this.sinkId = sinkId;
     this.onQueue = onQueue;
+    this.onLevel = onLevel;
     this.context = null;
     this.node = null;
   }
@@ -27,6 +28,7 @@ class VoicePlayback {
     });
     this.node.port.onmessage = (event) => {
       if (event.data?.type === 'queued' && this.onQueue) this.onQueue(event.data.samples);
+      if (event.data?.type === 'level' && this.onLevel) this.onLevel(event.data.value);
     };
     this.node.connect(this.context.destination);
     await this.useSink(this.sinkId);

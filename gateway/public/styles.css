@@ -500,6 +500,7 @@ body {
 .approval-answer input:focus { border-color: var(--accent); }
 .approval-answer .approval-btn { flex: 0 0 auto; min-width: 0; }
 
+
 /* ---------------- voice ---------------- */
 
 .voice-toggle {
@@ -512,72 +513,229 @@ body {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  opacity: 0.65;
+  opacity: 0.6;
+  transition: opacity 120ms ease, color 120ms ease;
 }
+.voice-toggle:hover { opacity: 1; }
 .voice-toggle svg { width: 22px; height: 22px; fill: currentColor; }
-.voice-toggle[aria-pressed='true'] { opacity: 1; color: #4ade80; }
+.voice-toggle[aria-pressed='true'] { opacity: 1; color: #6ee7b7; }
 
-.voice-panel {
+/* Full-screen voice mode.
+   While you are talking to Jarvis, this is the whole interface - a strip above
+   the composer makes voice feel like a feature rather than a mode. */
+.voice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background:
+    radial-gradient(120% 90% at 50% 8%, rgba(80, 90, 190, 0.28), transparent 62%),
+    radial-gradient(90% 70% at 50% 100%, rgba(30, 130, 130, 0.18), transparent 58%),
+    #07080d;
+  color: #e9ecf5;
+  animation: vo-fade 220ms ease both;
+}
+.voice-overlay[hidden] { display: none; }
+
+@keyframes vo-fade {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.vo-top {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-top: 1px solid rgba(127, 127, 127, 0.2);
+  justify-content: space-between;
+  padding: 18px 20px;
+}
+.vo-state {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+.vo-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+}
+.vo-icon svg { width: 18px; height: 18px; fill: currentColor; }
+.vo-icon:hover { background: rgba(255, 255, 255, 0.12); }
+
+.vo-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 34px;
+  padding: 0 24px;
+  min-height: 0;
 }
 
-.voice-talk {
+/* The orb.
+   --level is written from JS every animation frame: microphone amplitude while
+   you speak, output amplitude while Jarvis speaks. Everything else is CSS, so
+   the animation runs on the compositor and never competes with the audio
+   thread for the main thread. */
+.vo-orb {
+  --level: 0;
+  --hue: 232;
   position: relative;
+  display: grid;
+  place-items: center;
+  width: min(56vw, 260px);
+  aspect-ratio: 1;
+}
+
+.vo-core {
+  width: 46%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.18) 42%, transparent 60%),
+    linear-gradient(160deg, hsl(var(--hue) 90% 70%), hsl(calc(var(--hue) + 40) 80% 52%));
+  box-shadow:
+    0 0 40px hsl(var(--hue) 90% 60% / calc(0.25 + var(--level) * 0.5)),
+    inset 0 0 30px rgba(255, 255, 255, 0.25);
+  transform: scale(calc(1 + var(--level) * 0.28));
+  transition: transform 80ms ease-out, box-shadow 120ms ease-out;
+}
+
+.vo-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid hsl(var(--hue) 80% 70% / 0.35);
+  opacity: 0;
+}
+
+/* Idle: a slow breath, so the orb reads as alive but not listening. */
+.vo-orb[data-state='idle'] .vo-core,
+.vo-orb[data-state='starting'] .vo-core {
+  animation: vo-breathe 3.6s ease-in-out infinite;
+}
+@keyframes vo-breathe {
+  0%, 100% { transform: scale(0.94); }
+  50% { transform: scale(1.02); }
+}
+
+.vo-orb[data-state='starting'] { --hue: 250; }
+.vo-orb[data-state='ready'] { --hue: 200; }
+.vo-orb[data-state='listening'],
+.vo-orb[data-state='talking'] { --hue: 158; }
+.vo-orb[data-state='speaking'] { --hue: 268; }
+
+/* Listening and speaking both ripple outward; the difference is colour and
+   that ripple speed follows amplitude while you talk. */
+.vo-orb[data-state='listening'] .vo-ring,
+.vo-orb[data-state='talking'] .vo-ring,
+.vo-orb[data-state='speaking'] .vo-ring {
+  animation: vo-ripple 2.6s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+.vo-ring-2 { animation-delay: 0.85s !important; }
+.vo-ring-3 { animation-delay: 1.7s !important; }
+
+@keyframes vo-ripple {
+  0% { transform: scale(0.52); opacity: 0.55; }
+  100% { transform: scale(1.12); opacity: 0; }
+}
+
+.vo-orb[data-state='speaking'] .vo-core {
+  animation: vo-pulse 1.9s ease-in-out infinite;
+}
+@keyframes vo-pulse {
+  0%, 100% { filter: saturate(1); }
+  50% { filter: saturate(1.35) brightness(1.12); }
+}
+
+.vo-caption {
+  margin: 0;
+  max-width: 44ch;
+  min-height: 3.2em;
+  text-align: center;
+  font-size: 17px;
+  line-height: 1.5;
+  opacity: 0.92;
+}
+.vo-caption[data-role='user'] { opacity: 0.55; font-style: italic; }
+
+.vo-hint {
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
+  opacity: 0.45;
+  max-width: 40ch;
+}
+
+.vo-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+}
+
+.vo-selects { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.vo-selects select {
+  padding: 7px 10px;
+  max-width: 46vw;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.vo-selects select:disabled { opacity: 0.35; }
+
+.vo-actions { display: flex; align-items: center; gap: 12px; }
+
+.vo-talk {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px;
-  border: 1px solid rgba(127, 127, 127, 0.35);
+  padding: 14px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.07);
   color: inherit;
   font: inherit;
+  font-size: 15px;
   cursor: pointer;
-  touch-action: none; /* hold-to-talk must not scroll the page */
+  touch-action: none; /* hold-to-talk must not scroll or select */
+  user-select: none;
+  transition: background 120ms ease, transform 80ms ease;
 }
-.voice-talk:disabled { opacity: 0.45; cursor: default; }
-
-.voice-meter {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.35;
-  transform: scale(calc(1 + var(--level, 0)));
-  transition: transform 60ms linear;
+.vo-talk svg { width: 20px; height: 20px; fill: currentColor; }
+.vo-talk:disabled { opacity: 0.35; cursor: default; }
+.vo-talk[data-live='true'] {
+  background: #10b981;
+  color: #04150f;
+  transform: scale(1.03);
 }
-.voice-panel[data-state='talking'] .voice-meter { opacity: 1; color: #f87171; }
-.voice-panel[data-state='ready'] .voice-meter { color: #4ade80; opacity: 0.8; }
+.vo-talk[hidden] { display: none; }
 
-.voice-hint { margin: 0; font-size: 12px; opacity: 0.6; }
-
-.voice-transcript {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  opacity: 0.85;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.voice-transcript[data-role='user'] { opacity: 0.6; font-style: italic; }
-
-.voice-mode select {
-  padding: 6px 8px;
-  border: 1px solid rgba(127, 127, 127, 0.35);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
+.vo-end {
+  padding: 14px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
+  cursor: pointer;
 }
-.voice-mode select:disabled { opacity: 0.5; }
-.voice-panel[data-state='listening'] .voice-meter { color: #4ade80; opacity: 1; }
+.vo-end:hover { background: #dc2626; }
 
-.voice-panel .voice-mode select { max-width: 150px; }
-.voice-panel .voice-mode select:disabled { opacity: 0.4; }
+@media (prefers-reduced-motion: reduce) {
+  .voice-overlay,
+  .vo-orb *,
+  .vo-core { animation: none !important; transition: none !important; }
+}

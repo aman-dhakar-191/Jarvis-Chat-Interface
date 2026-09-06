@@ -8,10 +8,11 @@
  * keeps voice and text on one identity, one sessionId and one reconnect story.
  */
 class VoiceSession {
-  constructor({ bridge, onState, onLevel, onNote, onTranscript }) {
+  constructor({ bridge, onState, onLevel, onOutputLevel, onNote, onTranscript }) {
     this.bridge = bridge;
     this.onState = onState;
     this.onLevel = onLevel;
+    this.onOutputLevel = onOutputLevel;
     this.onNote = onNote;
     this.onTranscript = onTranscript;
     this.voiceSessionId = null;
@@ -77,6 +78,7 @@ class VoiceSession {
       // which is the usual reason an assistant keeps talking after being
       // interrupted.
       this.playback?.flush();
+      if (this.state === 'speaking') this.setState(this.mode === 'open' ? 'listening' : 'ready');
       return;
     }
 
@@ -85,7 +87,10 @@ class VoiceSession {
       return;
     }
 
-    if (event.event === 'voice.turn.complete') return;
+    if (event.event === 'voice.turn.complete') {
+      if (this.state === 'speaking') this.setState(this.mode === 'open' ? 'listening' : 'ready');
+      return;
+    }
 
     if (event.event === 'voice.engine.reconnected') {
       // The upstream connection is capped and gets replaced periodically. The
@@ -114,6 +119,7 @@ class VoiceSession {
     this.playback = new VoicePlayback({
       sampleRate: outputSampleRate,
       sinkId: VoiceDevices.get('output'),
+      onLevel: (level) => this.onOutputLevel?.(level),
     });
     await this.playback.start();
     await this.playback.resume();
@@ -143,6 +149,10 @@ class VoiceSession {
   onAudio(arrayBuffer) {
     const frame = decodeVoiceFrame(arrayBuffer);
     if (!frame || frame.type !== VOICE_FRAME.ASSISTANT_AUDIO) return;
+    // First audio of a turn: the assistant has started talking.
+    if (this.state === 'listening' || this.state === 'ready' || this.state === 'thinking') {
+      this.setState('speaking');
+    }
     this.stats.framesIn += 1;
     this.stats.bytesIn += frame.pcm.byteLength;
     this.playback?.enqueue(frame.pcm);
