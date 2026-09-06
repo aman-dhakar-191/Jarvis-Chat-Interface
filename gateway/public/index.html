@@ -136,6 +136,11 @@
       <select id="voice-mic" aria-label="Microphone"><option value="">Default mic</option></select>
       <select id="voice-speaker" aria-label="Speaker"><option value="">Default speaker</option></select>
     </div>
+    <label class="vo-gate">
+      <span>Mic gate</span>
+      <input id="voice-gate" type="range" min="0" max="0.08" step="0.002" aria-label="Microphone gate threshold">
+      <span class="vo-gate-value" id="voice-gate-value">0.020</span>
+    </label>
     <div class="vo-actions">
       <button id="voice-talk" class="vo-talk" type="button" disabled>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 003-3V6a3 3 0 00-6 0v5a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.9V21h2v-3.1A7 7 0 0019 11z"/></svg>

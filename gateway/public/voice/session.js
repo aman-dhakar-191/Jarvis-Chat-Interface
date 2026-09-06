@@ -8,11 +8,12 @@
  * keeps voice and text on one identity, one sessionId and one reconnect story.
  */
 class VoiceSession {
-  constructor({ bridge, onState, onLevel, onOutputLevel, onNote, onTranscript }) {
+  constructor({ bridge, onState, onLevel, onOutputLevel, onNote, onTranscript, onGated }) {
     this.bridge = bridge;
     this.onState = onState;
     this.onLevel = onLevel;
     this.onOutputLevel = onOutputLevel;
+    this.onGated = onGated;
     this.onNote = onNote;
     this.onTranscript = onTranscript;
     this.voiceSessionId = null;
@@ -136,6 +137,8 @@ class VoiceSession {
       sampleRate: inputSampleRate,
       frameMs,
       deviceId: VoiceDevices.get('input'),
+      gate: VoiceDevices.gate(),
+      onGated: () => this.onGated?.(),
       onLevel: (level) => this.onLevel?.(level),
       onFrame: (pcm) => this.sendAudio(pcm),
     });
@@ -187,6 +190,11 @@ class VoiceSession {
   async useInput(deviceId) {
     VoiceDevices.set('input', deviceId);
     await this.capture?.useDevice(deviceId, this.state === 'talking' || this.mode === 'open');
+  }
+
+  setGate(threshold) {
+    VoiceDevices.setGate(threshold);
+    this.capture?.setGate(threshold);
   }
 
   async useOutput(deviceId) {
