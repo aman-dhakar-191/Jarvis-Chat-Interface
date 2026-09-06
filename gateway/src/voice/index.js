@@ -13,7 +13,7 @@
 const logger = require('../logger');
 const protocol = require('../protocol');
 const frames = require('./frames');
-const { createEngine } = require('./engine');
+const { createEngine, MODES } = require('./engine');
 
 const { ERROR_CODES } = protocol;
 
@@ -38,6 +38,9 @@ async function handleSessionStart(ctx, connection, event) {
     return voiceError(connection, ERROR_CODES.VOICE_UNAVAILABLE, 'VOICE_PROVIDER=gemini needs GEMINI_API_KEY.');
   }
 
+  // Turn-taking mode is the client's to pick, but not to invent.
+  const mode = MODES.includes(event.data.mode) ? event.data.mode : 'ptt';
+
   const sessionId = event.sessionId || connection.sessionId || connection.defaultSessionId;
   connection.sessionId = sessionId ? String(sessionId) : connection.sessionId;
 
@@ -53,8 +56,9 @@ async function handleSessionStart(ctx, connection, event) {
 
   let engine;
   try {
-    engine = createEngine(config, buildCallbacks(ctx, connection, session));
+    engine = createEngine(config, buildCallbacks(ctx, connection, session), { mode });
     session.engine = engine;
+    session.mode = mode;
     await engine.open();
   } catch (err) {
     logger.error('voice engine failed to open', { error: err.message, provider: config.voice.provider });
@@ -82,6 +86,9 @@ async function handleSessionStart(ctx, connection, event) {
     outputSampleRate: engine.outputSampleRate,
     frameMs: config.voice.frameMs,
     engine: engine.name,
+    // `open` means the microphone stays live while the assistant speaks and the
+    // engine decides the turns; `ptt` means the client does.
+    mode,
     expiresAt: new Date(session.expiresAt).toISOString(),
   });
 
@@ -90,6 +97,7 @@ async function handleSessionStart(ctx, connection, event) {
     connectionId: connection.id,
     userId: connection.userId,
     engine: engine.name,
+    mode,
   });
 }
 
@@ -162,6 +170,10 @@ function handleSessionEnd(ctx, connection, event) {
 function handleActivity(ctx, connection, event, starting) {
   const session = ctx.voiceSessions.forConnection(connection.id);
   if (!session?.engine) return;
+  // In always-on mode the engine detects turns itself. A client that sends
+  // these anyway is ignored rather than errored: it is harmless, and the mode
+  // can change between a press and its release.
+  if (session.mode === 'open') return;
   if (starting) {
     session.talking = true;
     // Speaking over the assistant is barge-in: tell the client to drop what it

@@ -23,17 +23,30 @@
  * onError, because the gateway decides whether the client sees them.
  */
 
-function createEngine(config, callbacks) {
+/**
+ * Turn-taking modes, chosen per session by the client:
+ *
+ *   ptt   push-to-talk. The client owns the turn edges and the engine's own
+ *         voice activity detection is disabled. Silence never reaches the
+ *         model, which matters on a tier billed by session time.
+ *
+ *   open  always listening. The engine detects speech itself, so the user can
+ *         speak while the assistant is speaking - genuine full duplex, and the
+ *         only mode where barge-in happens without pressing anything.
+ */
+const MODES = ['ptt', 'open'];
+
+function createEngine(config, callbacks, { mode = 'ptt' } = {}) {
   const provider = config.voice.provider;
   if (provider === 'echo') {
     const { EchoEngine } = require('./engines/echo');
-    return new EchoEngine(config, callbacks);
+    return new EchoEngine(config, callbacks, { mode });
   }
   if (provider === 'gemini') {
     const { GeminiLiveEngine } = require('./engines/gemini');
-    return new GeminiLiveEngine(config, callbacks);
+    return new GeminiLiveEngine(config, callbacks, { mode });
   }
   throw new Error(`Unknown VOICE_PROVIDER "${provider}"`);
 }
 
-module.exports = { createEngine };
+module.exports = { createEngine, MODES };

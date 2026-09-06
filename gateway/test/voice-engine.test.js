@@ -228,3 +228,43 @@ test('gemini without a key is refused at config level with a usable warning', ()
   assert.equal(config.voice.apiKey, '');
   assert.ok(config.warnings.some((w) => w.includes('GEMINI_API_KEY')));
 });
+
+test('ptt disables the engine VAD; open mode enables it with a safe threshold', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  const ptt = engineFor(fake, {}, {});
+  await ptt.open();
+  assert.equal(fake.setups[0].realtimeInputConfig.automaticActivityDetection.disabled, true);
+  await ptt.close();
+
+  const open = engineFor(fake, {}, {});
+  open.mode = 'open';
+  await open.open();
+  const detection = fake.setups[1].realtimeInputConfig.automaticActivityDetection;
+  assert.equal(detection.disabled, false);
+  // Below ~500ms a natural mid-sentence pause reads as end-of-turn.
+  assert.ok(detection.silenceDurationMs >= 500, `silence threshold too low: ${detection.silenceDurationMs}`);
+  await open.close();
+});
+
+test('manual activity markers are suppressed in open mode', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  const engine = engineFor(fake);
+  engine.mode = 'open';
+  await engine.open();
+  t.after(() => engine.close());
+
+  // Sending these alongside automatic detection is a protocol error, so the
+  // engine must swallow them rather than forwarding.
+  engine.activityStart();
+  engine.activityEnd();
+  engine.sendAudio(Buffer.from([1, 2]));
+  await waitUntil(() => fake.messages.length >= 1);
+
+  assert.equal(fake.messages.filter((m) => m.realtimeInput?.activityStart).length, 0);
+  assert.equal(fake.messages.filter((m) => m.realtimeInput?.activityEnd).length, 0);
+  assert.ok(fake.messages[0].realtimeInput.audio);
+});

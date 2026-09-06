@@ -15,6 +15,7 @@
   const label = document.getElementById('voice-state');
   const meter = document.getElementById('voice-meter');
   const transcript = document.getElementById('voice-transcript');
+  const modeSelect = document.getElementById('voice-mode');
   if (!toggle || !talk || !panel) return;
 
   const session = new VoiceSession({
@@ -22,7 +23,12 @@
     onState: (state) => {
       label.textContent = state;
       panel.dataset.state = state;
+      // Hold-to-talk is meaningless while the engine is listening on its own.
+      talk.hidden = session.mode === 'open';
       talk.disabled = state !== 'ready' && state !== 'talking';
+      // The mode is fixed for the life of a session: switching it means a
+      // different engine configuration, so it is chosen before starting.
+      if (modeSelect) modeSelect.disabled = state !== 'idle';
       toggle.setAttribute('aria-pressed', String(state !== 'idle'));
     },
     onLevel: (level) => {
@@ -39,6 +45,11 @@
 
   bridge.onVoiceEvent((event) => session.onEvent(event));
   bridge.onVoiceAudio((buffer) => session.onAudio(buffer));
+
+  if (modeSelect) {
+    modeSelect.addEventListener('change', () => session.setMode(modeSelect.value));
+    session.setMode(modeSelect.value);
+  }
 
   toggle.addEventListener('click', async () => {
     panel.hidden = false;

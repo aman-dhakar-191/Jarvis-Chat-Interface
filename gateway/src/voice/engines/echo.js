@@ -9,10 +9,11 @@
  * whole voice path be exercised in tests and offline, with no API key.
  */
 class EchoEngine {
-  constructor(config, callbacks = {}) {
+  constructor(config, callbacks = {}, { mode = 'ptt' } = {}) {
     this.config = config;
     this.callbacks = callbacks;
     this.name = 'echo';
+    this.mode = mode;
     // Echo returns what it was given, so both directions run at input rate.
     this.inputSampleRate = config.voice.inputSampleRate;
     this.outputSampleRate = config.voice.inputSampleRate;

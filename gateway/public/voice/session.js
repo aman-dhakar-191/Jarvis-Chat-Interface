@@ -15,6 +15,7 @@ class VoiceSession {
     this.onNote = onNote;
     this.onTranscript = onTranscript;
     this.voiceSessionId = null;
+    this.mode = 'ptt';
     this.capture = null;
     this.playback = null;
     this.sequence = 0;
@@ -27,6 +28,13 @@ class VoiceSession {
     this.onState?.(state);
   }
 
+  /** Only meaningful before start(); a live session keeps the mode it opened with. */
+  setMode(mode) {
+    if (this.state !== 'idle') return false;
+    this.mode = mode === 'open' ? 'open' : 'ptt';
+    return true;
+  }
+
   async start() {
     const socket = this.bridge.socket();
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -34,20 +42,32 @@ class VoiceSession {
       return;
     }
     this.setState('starting');
-    this.send('voice.session.start');
+    this.send('voice.session.start', { mode: this.mode });
   }
 
   /** Called by the bridge for every `voice.*` event from the gateway. */
   async onEvent(event) {
     if (event.event === 'voice.session.started') {
       this.voiceSessionId = event.data.voiceSessionId;
+      this.mode = event.data.mode || 'ptt';
       await this.openAudio(event.data);
-      this.setState('ready');
-      this.onNote?.(
-        event.data.engine === 'echo'
-          ? 'Echo mode: your microphone is mirrored back, with no model attached.'
-          : 'Voice session ready. Hold to talk.',
-      );
+
+      if (this.mode === 'open') {
+        // Always-on: the microphone stays live from here, including while the
+        // assistant speaks. That is what makes barge-in possible without
+        // pressing anything - and what makes echo cancellation load-bearing.
+        this.capture.setTransmitting(true);
+        this.setState('listening');
+      } else {
+        this.setState('ready');
+      }
+      if (event.data.engine === 'echo') {
+        this.onNote?.('Echo mode: your microphone is mirrored back, with no model attached.');
+      } else if (this.mode === 'open') {
+        this.onNote?.('Listening. Speak any time — you can interrupt mid-sentence. Use headphones, or Jarvis will hear itself and interrupt its own turn.');
+      } else {
+        this.onNote?.('Voice session ready. Hold to talk.');
+      }
       return;
     }
 
@@ -125,6 +145,9 @@ class VoiceSession {
   }
 
   setTransmitting(on) {
+    // Always-on mode has no press: the microphone is already live and the
+    // engine owns the turn edges.
+    if (this.mode === 'open') return;
     if (this.state !== 'ready' && this.state !== 'talking') return;
 
     // Push-to-talk is manual turn detection: the engine's own VAD is off, so

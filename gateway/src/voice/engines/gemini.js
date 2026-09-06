@@ -28,10 +28,11 @@ const HOST = 'generativelanguage.googleapis.com';
 const PATH = '/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 class GeminiLiveEngine {
-  constructor(config, callbacks = {}) {
+  constructor(config, callbacks = {}, { mode = 'ptt' } = {}) {
     this.config = config.voice;
     this.callbacks = callbacks;
     this.name = 'gemini';
+    this.mode = mode;
     this.inputSampleRate = config.voice.inputSampleRate;
     this.outputSampleRate = config.voice.outputSampleRate;
 
@@ -60,9 +61,20 @@ class GeminiLiveEngine {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: this.config.voiceName } },
         },
       },
-      // Push-to-talk owns turn boundaries, so the model must not also guess.
+      // Push-to-talk owns the turn boundaries, so the model must not also
+      // guess. Always-on mode is the opposite: the model's own detection is
+      // what lets the user interrupt without pressing anything, which is the
+      // whole point of full duplex.
       realtimeInputConfig: {
-        automaticActivityDetection: { disabled: true },
+        automaticActivityDetection: this.mode === 'open'
+          ? {
+            disabled: false,
+            // Below ~500 ms of trailing silence, natural pauses get cut into
+            // fragments, which degrades both transcription and replies.
+            silenceDurationMs: this.config.silenceDurationMs,
+            prefixPaddingMs: this.config.prefixPaddingMs,
+          }
+          : { disabled: true },
       },
       // Ask for a resumption handle from the first message, otherwise the first
       // upstream drop loses the conversation.
@@ -239,15 +251,19 @@ class GeminiLiveEngine {
     for (const chunk of queued) this.send(chunk);
   }
 
+  // In `open` mode the model detects turns itself; sending manual activity
+  // markers alongside automatic detection is a protocol error, not a hint.
   activityStart() {
+    if (this.mode !== 'ptt') return;
     this.send({ realtimeInput: { activityStart: {} } });
   }
 
   activityEnd() {
+    if (this.mode !== 'ptt') return;
     this.send({ realtimeInput: { activityEnd: {} } });
   }
 
-  /** Barge-in. The model drops its turn when new activity starts. */
+  /** Barge-in. The model drops its turn when the user starts a new one. */
   cancel() {
     this.speaking = false;
     this.activityStart();

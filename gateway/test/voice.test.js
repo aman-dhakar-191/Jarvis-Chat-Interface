@@ -101,6 +101,7 @@ test('voice session starts and echoes microphone audio back', async (t) => {
   assert.equal(started.data.outputSampleRate, 16000);
   assert.equal(started.data.frameMs, 20);
   assert.equal(started.data.engine, 'echo');
+  assert.equal(started.data.mode, 'ptt', 'push-to-talk is the default');
   assert.equal(gateway.voiceSessions.size, 1);
 
   const pcm = tone();
@@ -215,4 +216,30 @@ test('health reports voice state', async (t) => {
   const health = await (await fetch(`${gateway.httpUrl}/health`)).json();
   assert.equal(health.voiceEnabled, true);
   assert.equal(health.voiceSessions, 0);
+});
+
+test('always-on mode is requested by the client and echoed back', async (t) => {
+  const gateway = await startGateway(VOICE_ON);
+  t.after(() => gateway.stop());
+
+  const client = await VoiceClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+
+  client.send({ id: 'evt_v1', event: 'voice.session.start', data: { mode: 'open' } });
+  const started = await client.waitForEvent('voice.session.started');
+  assert.equal(started.data.mode, 'open');
+});
+
+test('an unknown mode falls back to push-to-talk rather than erroring', async (t) => {
+  const gateway = await startGateway(VOICE_ON);
+  t.after(() => gateway.stop());
+
+  const client = await VoiceClient.connect(`${gateway.wsUrl}/?token=${TOKEN}`);
+  t.after(() => client.close());
+  await client.waitForEvent('connection.ready');
+
+  client.send({ id: 'evt_v1', event: 'voice.session.start', data: { mode: 'wide-open' } });
+  const started = await client.waitForEvent('voice.session.started');
+  assert.equal(started.data.mode, 'ptt');
 });

@@ -75,6 +75,11 @@ function buildConfig(env = process.env) {
       inputSampleRate: int(env, 'VOICE_INPUT_SAMPLE_RATE', 16000),
       outputSampleRate: int(env, 'VOICE_OUTPUT_SAMPLE_RATE', 24000),
       frameMs: int(env, 'VOICE_FRAME_MS', 20),
+      // Always-on mode only. Below ~500 ms of trailing silence, a natural pause
+      // mid-sentence is treated as the end of a turn, which fragments both the
+      // transcript and the reply.
+      silenceDurationMs: int(env, 'VOICE_SILENCE_MS', 700),
+      prefixPaddingMs: int(env, 'VOICE_PREFIX_PADDING_MS', 300),
       maxSessionMs: int(env, 'VOICE_MAX_SESSION_MS', 1800000),
       // Upstream drops a connection roughly every 10 minutes; session
       // resumption makes that invisible, but a revoked key never recovers, so

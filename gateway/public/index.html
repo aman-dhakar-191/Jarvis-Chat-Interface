@@ -50,7 +50,13 @@
       <span class="voice-meter" id="voice-meter" aria-hidden="true"></span>
       <span>Hold to talk</span>
     </button>
-    <p class="voice-hint">Hold the button or the space bar. State: <code id="voice-state">idle</code></p>
+    <label class="voice-mode">
+      <select id="voice-mode">
+        <option value="ptt">Hold to talk</option>
+        <option value="open">Always listening</option>
+      </select>
+    </label>
+    <p class="voice-hint">State: <code id="voice-state">idle</code></p>
     <p class="voice-transcript" id="voice-transcript" aria-live="polite"></p>
   </section>
 

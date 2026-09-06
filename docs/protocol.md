@@ -32,10 +32,10 @@ connection is full-duplex, not request/response.
 | `user.message` | `{ messageId?, content, useTestWebhook? }` | `content` is required, ≤ 8000 chars. A `messageId` is generated if omitted. `useTestWebhook: true` routes just this message to n8n's `/webhook-test/` path. |
 | `connection.ping` | anything | Answered with `connection.pong`. |
 | `approval.respond` | `{ approvalId, choice?, text?, comment? }` | Answers a human-in-the-loop prompt; the gateway resumes the parked n8n execution. Send `choice` for a decision, `text` for a question. |
-| `voice.session.start` | — | Opens a voice session on this connection. Requires `VOICE_ENABLED=true`. Starting twice replaces the first. |
+| `voice.session.start` | `{ mode? }` | Opens a voice session. Requires `VOICE_ENABLED=true`. `mode` is `ptt` (default) or `open`; anything else falls back to `ptt`. Starting twice replaces the first. |
 | `voice.session.end` | `{ voiceSessionId }` | Idempotent. Disconnecting does the same thing. |
-| `voice.activity.start` | `{ voiceSessionId }` | Push-to-talk pressed. The engine's own VAD is off, so this is what marks the start of a turn. |
-| `voice.activity.end` | `{ voiceSessionId }` | Released. Marks the end of the turn. |
+| `voice.activity.start` | `{ voiceSessionId }` | Push-to-talk pressed. In `ptt` mode the engine's own VAD is off, so this marks the start of a turn. Ignored in `open` mode. |
+| `voice.activity.end` | `{ voiceSessionId }` | Released. Marks the end of the turn. Ignored in `open` mode. |
 
 A client **cannot** set its own `userId`. Identity comes from the token
 presented at the handshake; anything you put in `data.userId` is ignored.
@@ -58,7 +58,7 @@ presented at the handshake; anything you put in `data.userId` is ignored.
 | `approval.expired` | `{ approvalId }` |
 | `error` | `{ code, message, messageId? }` |
 | `connection.pong` | `{ echo }` |
-| `voice.session.started` | `{ voiceSessionId, inputSampleRate, outputSampleRate, frameMs, engine, expiresAt }` |
+| `voice.session.started` | `{ voiceSessionId, inputSampleRate, outputSampleRate, frameMs, engine, mode, expiresAt }` |
 | `voice.transcript` | `{ voiceSessionId, role, text, final }` |
 | `voice.interrupted` | `{ voiceSessionId }` — **drop buffered playback immediately** |
 | `voice.turn.complete` | `{ voiceSessionId }` |
@@ -91,6 +91,21 @@ changing engines does not require a client release.
 `engine: "echo"` means the gateway is mirroring your microphone back with no
 model attached (`VOICE_PROVIDER=echo`). It is the quickest way to tell a broken
 browser audio pipeline from a broken model connection.
+
+## Turn-taking modes
+
+`ptt` — push-to-talk. The client owns the turn edges via `voice.activity.*` and
+the engine's own detection is disabled, so silence never reaches the model.
+That matters on a tier billed by session time.
+
+`open` — always listening. The microphone stays live while the assistant is
+speaking and the engine detects turns itself. This is the only mode with
+genuine barge-in: the user interrupts by speaking, without pressing anything.
+It is also the mode where echo cancellation becomes load-bearing — on speakers
+rather than headphones, the assistant hears itself and interrupts its own turn.
+
+The mode is fixed for the life of a session, because it changes how the engine
+is configured upstream.
 
 The upstream engine connection is capped at roughly 10 minutes. The gateway
 re-establishes it with a session-resumption handle and emits

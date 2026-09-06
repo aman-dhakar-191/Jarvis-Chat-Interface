@@ -49,6 +49,7 @@ class VoiceSessionStore {
       sessionId,
       // Set once the engine is open: the engine, not config, owns the rates.
       engine: null,
+      mode: 'ptt',
       inputSampleRate: null,
       outputSampleRate: null,
       talking: false,
