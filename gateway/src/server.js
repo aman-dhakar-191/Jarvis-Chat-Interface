@@ -12,6 +12,7 @@ const { Connection, ConnectionRegistry } = require('./connections');
 const { ExecutionStore } = require('./executions');
 const { ApprovalStore, resumeUrlAllowed } = require('./approvals');
 const { VoiceSessionStore } = require('./voice/sessions');
+const { ApprovalRules } = require('./voice/rules');
 const voice = require('./voice');
 const { dispatch } = require('./handlers');
 
@@ -22,7 +23,8 @@ function createServer(config) {
   const executions = new ExecutionStore();
   const approvals = new ApprovalStore();
   const voiceSessions = new VoiceSessionStore();
-  const ctx = { config, registry, executions, approvals, voiceSessions };
+  const approvalRules = new ApprovalRules(config);
+  const ctx = { config, registry, executions, approvals, voiceSessions, approvalRules };
 
   const app = express();
   app.disable('x-powered-by');
@@ -123,6 +125,20 @@ function createServer(config) {
 
     const outbound = protocol.makeEvent(eventName, { sessionId: filter.sessionId || null, data });
     const delivered = registry.deliver(filter, outbound);
+
+    // An approval raised while a voice session is live is read out and answered
+    // by voice - buttons in the transcript are no use mid-conversation. The
+    // chat still renders it, so either channel can answer.
+    if (eventName === 'approval.request') {
+      for (const target of registry.connections.values()) {
+        if (filter.connectionId && target.id !== filter.connectionId) continue;
+        if (!filter.connectionId && filter.sessionId && target.sessionId !== filter.sessionId) continue;
+        if (!filter.connectionId && !filter.sessionId && target.userId !== filter.userId) continue;
+        voice.offerApproval(ctx, target, data).catch((err) => {
+          logger.error('failed to offer approval by voice', { error: err.stack });
+        });
+      }
+    }
 
     if (execution && eventName === 'assistant.message') {
       registry.deliver(filter, protocol.makeEvent('execution.completed', {

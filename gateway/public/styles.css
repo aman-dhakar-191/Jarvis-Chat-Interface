@@ -768,3 +768,62 @@ body {
   filter: grayscale(0.75) brightness(0.6);
 }
 .vo-orb .vo-core { transition: transform 80ms ease-out, box-shadow 120ms ease-out, filter 160ms ease; }
+
+.vo-routing {
+  align-self: center;
+  font-size: 12px;
+  opacity: 0.45;
+  max-width: 34ch;
+  text-align: center;
+}
+.vo-selects select[hidden] { display: none; }
+
+/* Minimised voice mode.
+   The session keeps running - this is a change of chrome, not of state - so
+   the transcript underneath becomes readable and tappable. That is what lets
+   an approval be answered without hanging up on Jarvis. */
+.voice-overlay[data-minimised='true'] {
+  inset: auto 16px calc(84px + env(safe-area-inset-bottom)) auto;
+  width: auto;
+  min-width: 168px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(12, 14, 22, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: none;
+}
+
+/* Everything except the orb and the state label collapses away. */
+.voice-overlay[data-minimised='true'] .vo-caption,
+.voice-overlay[data-minimised='true'] .vo-hint,
+.voice-overlay[data-minimised='true'] .vo-controls,
+.voice-overlay[data-minimised='true'] .vo-ring,
+.voice-overlay[data-minimised='true'] #voice-min { display: none; }
+
+.voice-overlay[data-minimised='true'] .vo-top {
+  order: 2;
+  padding: 0;
+  gap: 8px;
+}
+.voice-overlay[data-minimised='true'] .vo-stage {
+  order: 1;
+  padding: 0;
+  gap: 0;
+  flex-direction: row;
+}
+.voice-overlay[data-minimised='true'] .vo-orb { width: 34px; }
+.voice-overlay[data-minimised='true'] .vo-core { width: 100%; }
+.voice-overlay[data-minimised='true'] .vo-icon {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+}
+.voice-overlay[data-minimised='true'] .vo-icon svg { width: 14px; height: 14px; }
+
+.vo-top-actions { display: flex; gap: 8px; }

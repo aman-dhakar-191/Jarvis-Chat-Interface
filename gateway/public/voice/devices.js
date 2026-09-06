@@ -76,6 +76,18 @@ const VoiceDevices = {
   },
 
   /**
+   * Whether a picker is worth showing at all.
+   *
+   * On mobile the OS owns audio routing: Android Chrome and iOS Safari expose
+   * no audiooutput devices and a single "Default" input, and setSinkId does not
+   * exist. A dropdown with one entry is not a choice - it is a dead control
+   * implying a feature the platform does not have.
+   */
+  meaningful(devices) {
+    return devices.length > 1;
+  },
+
+  /**
    * Fill a <select>, keeping the stored choice selected when it still exists.
    * A device that has been unplugged silently falls back to the system default.
    */

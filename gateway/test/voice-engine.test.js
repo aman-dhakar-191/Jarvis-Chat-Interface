@@ -354,3 +354,100 @@ test('an explicit language and prompt override the defaults', async (t) => {
   assert.equal(fake.setups[0].generationConfig.speechConfig.languageCode, 'hi-IN');
   assert.equal(fake.setups[0].systemInstruction.parts[0].text, 'Custom.');
 });
+
+const voiceApprovals = require('../src/voice/approvals');
+const { ApprovalRules } = require('../src/voice/rules');
+
+test('tools are declared to the model, and the browser is never involved', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  const engine = engineFor(fake, {}, {});
+  engine.tools = voiceApprovals.TOOLS;
+  await engine.open();
+  t.after(() => engine.close());
+
+  const names = fake.setups[0].tools[0].functionDeclarations.map((f) => f.name);
+  assert.deepEqual(names.sort(), [
+    'forget_approval_rule', 'list_approval_rules', 'remember_approval_choice', 'resolve_approval',
+  ]);
+});
+
+test('a tool call reaches the callback and its result goes back', async (t) => {
+  const fake = await startFakeLive();
+  t.after(() => fake.close());
+
+  const calls = [];
+  const engine = engineFor(fake, {}, { onToolCall: (c) => calls.push(c) });
+  await engine.open();
+  t.after(() => engine.close());
+
+  fake.last().send(JSON.stringify({
+    toolCall: { functionCalls: [{ id: 'fc_1', name: 'resolve_approval', args: { approvalId: 'a1', decision: 'approve' } }] },
+  }));
+  await waitUntil(() => calls.length > 0);
+  assert.equal(calls[0].name, 'resolve_approval');
+  assert.equal(calls[0].args.decision, 'approve');
+
+  engine.sendToolResult('fc_1', 'resolve_approval', { ok: true });
+  await waitUntil(() => fake.messages.some((m) => m.toolResponse));
+  const sent = fake.messages.find((m) => m.toolResponse).toolResponse.functionResponses[0];
+  assert.equal(sent.id, 'fc_1');
+  assert.deepEqual(sent.response, { ok: true });
+});
+
+test('a broad standing rule is refused rather than stored', async (t) => {
+  const rules = new ApprovalRules(buildConfig({ VOICE_ENABLED: 'true' }));
+  const session = { pendingApprovalId: null };
+  const connection = { userId: 'aman' };
+
+  for (const kind of ['everything', 'all actions', 'any request', '*']) {
+    const result = await voiceApprovals.handleToolCall({}, connection, session, {
+      name: 'remember_approval_choice',
+      args: { kind, decision: 'approve' },
+    }, rules);
+    // A rule this broad defeats the point of asking at all, so the gateway
+    // refuses it rather than trusting the model's judgement.
+    assert.equal(result.ok, false, `"${kind}" must be refused`);
+  }
+
+  const ok = await voiceApprovals.handleToolCall({}, connection, session, {
+    name: 'remember_approval_choice',
+    args: { kind: 'Calendar Event Created', decision: 'approve' },
+  }, rules);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.remembered, 'calendar event created');
+});
+
+test('rules match a request only when the remembered kind actually appears', async (t) => {
+  const rules = new ApprovalRules(buildConfig({ VOICE_ENABLED: 'true' }));
+  await rules.add('calendar event', 'approve', 'aman');
+
+  assert.ok(await rules.match('aman', 'Create a calendar event for Friday at 3pm?'));
+  // A stray shared word must not fire a rule: the cost of a wrong match is an
+  // action taken without asking.
+  assert.equal(await rules.match('aman', 'Delete the production database?'), null);
+  assert.equal(await rules.match('aman', ''), null);
+  // Rules are per user.
+  assert.equal(await rules.match('someone-else', 'Create a calendar event?'), null);
+});
+
+test('a rule can be listed and forgotten by voice', async (t) => {
+  const rules = new ApprovalRules(buildConfig({ VOICE_ENABLED: 'true' }));
+  const connection = { userId: 'aman' };
+  const session = {};
+
+  await voiceApprovals.handleToolCall({}, connection, session, {
+    name: 'remember_approval_choice', args: { kind: 'draft email saved', decision: 'approve' },
+  }, rules);
+
+  const listed = await voiceApprovals.handleToolCall({}, connection, session, {
+    name: 'list_approval_rules', args: {},
+  }, rules);
+  assert.equal(listed.rules.length, 1);
+
+  await voiceApprovals.handleToolCall({}, connection, session, {
+    name: 'forget_approval_rule', args: { kind: 'draft email saved' },
+  }, rules);
+  assert.equal((await rules.list('aman')).length, 0);
+});

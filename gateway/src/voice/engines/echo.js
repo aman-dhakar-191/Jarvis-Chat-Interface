@@ -34,6 +34,10 @@ class EchoEngine {
 
   cancel() {}
 
+  sendToolResult() {}
+
+  sendText() {}
+
   async close() {}
 }
 

@@ -15,6 +15,7 @@ const protocol = require('../protocol');
 const frames = require('./frames');
 const { createEngine, MODES } = require('./engine');
 const memory = require('./memory');
+const voiceApprovals = require('./approvals');
 
 const { ERROR_CODES } = protocol;
 
@@ -66,6 +67,9 @@ async function handleSessionStart(ctx, connection, event) {
       mode,
       instructions: await loadInstructions(),
       refreshInstructions: loadInstructions,
+      // One tool group for now: answering approvals aloud. The plumbing is
+      // generic, so the rest of the tools in Phase 4 are additions here.
+      tools: config.voice.spokenApprovals ? voiceApprovals.TOOLS : [],
     });
     session.engine = engine;
     session.mode = mode;
@@ -139,6 +143,23 @@ function buildCallbacks(ctx, connection, session) {
       voiceEvent(connection, 'voice.engine.reconnected', {
         voiceSessionId: session.voiceSessionId,
         resumed: Boolean(resumed),
+      });
+    },
+    onToolCall: async (call) => {
+      let result;
+      try {
+        result = await voiceApprovals.handleToolCall(ctx, connection, session, call, ctx.approvalRules);
+      } catch (err) {
+        logger.error('voice tool call failed', { name: call.name, error: err.stack });
+        result = { ok: false, error: 'That did not work. Tell Aman it failed rather than assuming it worked.' };
+      }
+      // The model speaks the outcome, so a failure is heard rather than
+      // silently swallowed - the worst outcome is it claiming success.
+      session.engine?.sendToolResult(call.id, call.name, result);
+      voiceEvent(connection, 'voice.tool.finished', {
+        voiceSessionId: session.voiceSessionId,
+        name: call.name,
+        ok: result?.ok !== false,
       });
     },
     onError: ({ code, message, fatal }) => {
@@ -259,4 +280,39 @@ function handle(ctx, connection, event) {
   }
 }
 
-module.exports = { handle, handleAudio, endSession };
+/**
+ * An approval was raised while this connection has a live voice session.
+ * Returns true if voice took it, so the caller knows it was spoken.
+ */
+async function offerApproval(ctx, connection, data) {
+  const { config, voiceSessions } = ctx;
+  if (!config.voice.spokenApprovals) return false;
+  const session = voiceSessions.forConnection(connection.id);
+  if (!session?.engine) return false;
+
+  // A standing rule means Aman already answered this kind of question. Act on
+  // it, but never silently: the model says what it did, and the chat still
+  // shows the request and its resolution.
+  const rule = await ctx.approvalRules.match(connection.userId, data.content);
+  if (rule) {
+    logger.info('approval auto-resolved by standing rule', {
+      approvalId: data.approvalId,
+      kind: rule.kind,
+      decision: rule.decision,
+    });
+    await voiceApprovals.resolve(ctx, connection, {
+      approvalId: data.approvalId,
+      decision: rule.decision,
+    });
+    session.engine.sendText([
+      `SYSTEM: A workflow asked "${data.content}".`,
+      `You already had a standing rule from Aman to ${rule.decision} anything matching "${rule.kind}", so it has been ${rule.decision}d without asking.`,
+      'Tell him briefly what you just did on his behalf. Do not ask him to confirm it - it is already done.',
+    ].join('\n'));
+    return true;
+  }
+
+  return voiceApprovals.speak(ctx, connection, session, data);
+}
+
+module.exports = { handle, handleAudio, endSession, offerApproval };

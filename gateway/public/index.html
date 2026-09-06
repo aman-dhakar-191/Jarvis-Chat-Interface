@@ -111,9 +111,14 @@
 <div id="voice-overlay" class="voice-overlay" hidden aria-hidden="true" role="dialog" aria-label="Voice mode">
   <header class="vo-top">
     <span class="vo-state" id="voice-state">idle</span>
+    <span class="vo-top-actions">
+    <button id="voice-min" class="vo-icon" type="button" aria-label="Minimise voice mode" title="Minimise - the conversation keeps running">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 13h12v-2H6z"/></svg>
+    </button>
     <button id="voice-close" class="vo-icon" type="button" aria-label="Close voice mode">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z"/></svg>
     </button>
+    </span>
   </header>
 
   <div class="vo-stage">
@@ -135,6 +140,7 @@
       </select>
       <select id="voice-mic" aria-label="Microphone"><option value="">Default mic</option></select>
       <select id="voice-speaker" aria-label="Speaker"><option value="">Default speaker</option></select>
+      <span class="vo-routing" id="voice-routing" hidden></span>
     </div>
     <label class="vo-gate">
       <span>Mic gate</span>

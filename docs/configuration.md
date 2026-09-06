@@ -187,6 +187,25 @@ curl -s https://jarvis.srv1918051.hstgr.cloud/health | grep -o '"voiceEnabled":[
 docker exec jarvis-gateway printenv | grep VOICE_
 ```
 
+### Device selection on mobile
+
+There is no microphone or speaker picker on a phone, and that is not a fault.
+Android Chrome and iOS Safari enumerate **no** `audiooutput` devices and do not
+implement `setSinkId`; input is usually a single "Default". The OS owns routing
+— connect or pair a headset and the phone switches to it, with the browser
+having no say.
+
+The pickers therefore hide themselves when they would offer only one entry, and
+a line of text says routing is handled by the device. A dropdown containing one
+option is not a choice; it is a dead control implying a feature the platform
+does not have.
+
+One caveat specific to Bluetooth on Android: a paired headset's *microphone* is
+only used when the OS switches the route into communication mode, and it does
+not always do so for a browser tab. If Jarvis sounds like it is hearing the
+phone's own mic while the headset plays audio, that is the cause, and a wired
+headset avoids it.
+
 ### Background speech
 
 Browser `noiseSuppression` is enabled but will not help with people talking
@@ -221,6 +240,48 @@ deliberately *not* implemented. It needs a speaker-embedding model, an
 enrolment flow and per-utterance comparison on the one path with no latency to
 spare, and it degrades with room acoustics. The gate plus push-to-talk covers
 the same ground for a fraction of the cost.
+
+### Spoken approvals
+
+An approval raised while a voice session is live is **read out and answered by
+voice**. Buttons in the chat transcript are no use mid-conversation, and the
+full-screen voice UI covers them. The chat still renders the request unchanged,
+so either channel can answer it.
+
+The resume URL never reaches the model or the browser, exactly as on the text
+path — the model can only say approve or reject for an id the gateway raised.
+
+**Standing rules** let Jarvis stop asking about a kind of request. These are the
+sharpest edge in the system, so they are deliberately constrained:
+
+- Creating a rule is a **separate question** from the approval. The model is
+  told to ask again in its own turn and pass `remember` explicitly; a yes to the
+  action is never treated as a yes to remembering it. Speech is misheard, and a
+  misheard yes that approves one action is recoverable while one that creates a
+  permanent rule is not.
+- Broad rules are **refused by the gateway**, not left to the model's judgement:
+  anything starting "all", "any", "every", "always", or shorter than four
+  characters. A rule that broad defeats the point of asking at all.
+- A rule fires only when its remembered kind actually appears in the request
+  text. A stray shared word will not trigger one; anything less clear falls
+  through to asking.
+- An automatic approval is **never silent** — Jarvis says what it just did on
+  your behalf, and the chat shows the request and its resolution as usual.
+- Rules are listable and revocable by voice: "what have you got standing rules
+  for?" and "stop auto-approving X".
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `VOICE_SPOKEN_APPROVALS` | `true` | `false` falls back to tapping in the transcript. |
+| `VOICE_RULES_URL` | — | The **Voice Approval Rules** n8n webhook. Unset keeps rules in memory only — they vanish on restart. |
+| `VOICE_RULES_TIMEOUT_MS` | `2500` | |
+
+```bash
+curl -sX POST https://n8n-z44q.srv1918051.hstgr.cloud/webhook/voice-approval-rules \
+  -H 'content-type: application/json' -d '{"op":"list","userId":"aman"}'
+```
+
+The table installs itself on first call.
 
 ### Voice memory
 
