@@ -45,27 +45,6 @@
 
   <div id="banner" class="banner" hidden></div>
 
-  <section id="voice-panel" class="voice-panel" data-state="idle" hidden>
-    <button id="voice-talk" class="voice-talk" type="button" disabled>
-      <span class="voice-meter" id="voice-meter" aria-hidden="true"></span>
-      <span>Hold to talk</span>
-    </button>
-    <label class="voice-mode">
-      <select id="voice-mode">
-        <option value="ptt">Hold to talk</option>
-        <option value="open">Always listening</option>
-      </select>
-    </label>
-    <label class="voice-mode">
-      <select id="voice-mic" aria-label="Microphone"><option value="">System default</option></select>
-    </label>
-    <label class="voice-mode">
-      <select id="voice-speaker" aria-label="Speaker"><option value="">System default</option></select>
-    </label>
-    <p class="voice-hint">State: <code id="voice-state">idle</code></p>
-    <p class="voice-transcript" id="voice-transcript" aria-live="polite"></p>
-  </section>
-
   <form id="composer" class="composer">
     <textarea id="input" rows="1" placeholder="Message Jarvis…" autocomplete="off"
               autocapitalize="sentences" enterkeyhint="send"></textarea>
@@ -125,6 +104,47 @@
     </footer>
   </form>
 </dialog>
+
+
+<!-- Full-screen voice mode. Its own layer rather than a strip above the
+     composer: while you are talking to Jarvis, that is the whole interface. -->
+<div id="voice-overlay" class="voice-overlay" hidden aria-hidden="true" role="dialog" aria-label="Voice mode">
+  <header class="vo-top">
+    <span class="vo-state" id="voice-state">idle</span>
+    <button id="voice-close" class="vo-icon" type="button" aria-label="Close voice mode">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z"/></svg>
+    </button>
+  </header>
+
+  <div class="vo-stage">
+    <div class="vo-orb" id="voice-orb" data-state="idle">
+      <span class="vo-ring vo-ring-1"></span>
+      <span class="vo-ring vo-ring-2"></span>
+      <span class="vo-ring vo-ring-3"></span>
+      <span class="vo-core"></span>
+    </div>
+    <p class="vo-caption" id="voice-transcript" aria-live="polite"></p>
+    <p class="vo-hint" id="voice-hint"></p>
+  </div>
+
+  <footer class="vo-controls">
+    <div class="vo-selects">
+      <select id="voice-mode" aria-label="Turn taking">
+        <option value="ptt">Hold to talk</option>
+        <option value="open">Always listening</option>
+      </select>
+      <select id="voice-mic" aria-label="Microphone"><option value="">Default mic</option></select>
+      <select id="voice-speaker" aria-label="Speaker"><option value="">Default speaker</option></select>
+    </div>
+    <div class="vo-actions">
+      <button id="voice-talk" class="vo-talk" type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 003-3V6a3 3 0 00-6 0v5a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.9V21h2v-3.1A7 7 0 0019 11z"/></svg>
+        <span id="voice-talk-label">Hold to talk</span>
+      </button>
+      <button id="voice-end" class="vo-end" type="button">End</button>
+    </div>
+  </footer>
+</div>
 
 <script src="/app.js"></script>
 <!-- Voice layer. Loads after app.js so window.Jarvis exists; the text UI works

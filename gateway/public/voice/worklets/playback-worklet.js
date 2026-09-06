@@ -17,6 +17,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.queue = [];
     this.queued = 0;
     this.reported = 0;
+    // Smoothed output amplitude, so the UI can show Jarvis speaking rather
+    // than guessing from whether audio is queued.
+    this.level = 0;
+    this.sinceLevel = 0;
 
     this.port.onmessage = (event) => {
       const data = event.data;
@@ -61,6 +65,20 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // Underrun is silence, not a stall - the stream is live, so waiting for
     // more audio would only add latency to whatever arrives next.
     if (written < channel.length) channel.fill(0, written);
+
+    let peak = 0;
+    for (let i = 0; i < channel.length; i += 4) {
+      const value = channel[i] < 0 ? -channel[i] : channel[i];
+      if (value > peak) peak = value;
+    }
+    // Asymmetric smoothing: rise fast so speech onset is immediate, fall slow
+    // so the orb does not flicker between syllables.
+    this.level = peak > this.level ? peak : this.level * 0.88 + peak * 0.12;
+    this.sinceLevel += 1;
+    if (this.sinceLevel >= 4) {
+      this.sinceLevel = 0;
+      this.port.postMessage({ type: 'level', value: this.level });
+    }
 
     // Let the UI show buffer depth without polling across the thread boundary.
     if (Math.abs(this.queued - this.reported) > 800) {
