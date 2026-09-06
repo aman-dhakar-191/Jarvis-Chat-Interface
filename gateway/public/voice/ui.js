@@ -26,6 +26,7 @@
     talk: document.getElementById('voice-talk'),
     talkLabel: document.getElementById('voice-talk-label'),
     end: document.getElementById('voice-end'),
+    routing: document.getElementById('voice-routing'),
     gate: document.getElementById('voice-gate'),
     gateValue: document.getElementById('voice-gate-value'),
   };
@@ -127,9 +128,20 @@
     const { inputs, outputs } = await VoiceDevices.list();
     VoiceDevices.fill(el.mic, inputs, VoiceDevices.get('input'));
     VoiceDevices.fill(el.speaker, outputs, VoiceDevices.get('output'));
-    if (el.speaker && !VoiceDevices.outputSelectable()) {
-      el.speaker.disabled = true;
-      el.speaker.title = 'This browser cannot choose an output device; using the system default.';
+
+    // Hide pickers that offer no actual choice rather than showing a dropdown
+    // with one entry. On mobile the OS owns routing - there are no output
+    // devices to enumerate and setSinkId does not exist - so a dead control
+    // would imply a feature the platform does not have.
+    const micUseful = VoiceDevices.meaningful(inputs);
+    const outUseful = VoiceDevices.outputSelectable() && VoiceDevices.meaningful(outputs);
+    if (el.mic) el.mic.hidden = !micUseful;
+    if (el.speaker) el.speaker.hidden = !outUseful;
+    if (el.routing) {
+      el.routing.hidden = micUseful && outUseful;
+      el.routing.textContent = outUseful
+        ? 'Microphone chosen by your device.'
+        : 'Audio routing is handled by your device — connect a headset and it switches automatically.';
     }
   }
 

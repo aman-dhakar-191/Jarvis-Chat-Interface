@@ -187,6 +187,25 @@ curl -s https://jarvis.srv1918051.hstgr.cloud/health | grep -o '"voiceEnabled":[
 docker exec jarvis-gateway printenv | grep VOICE_
 ```
 
+### Device selection on mobile
+
+There is no microphone or speaker picker on a phone, and that is not a fault.
+Android Chrome and iOS Safari enumerate **no** `audiooutput` devices and do not
+implement `setSinkId`; input is usually a single "Default". The OS owns routing
+— connect or pair a headset and the phone switches to it, with the browser
+having no say.
+
+The pickers therefore hide themselves when they would offer only one entry, and
+a line of text says routing is handled by the device. A dropdown containing one
+option is not a choice; it is a dead control implying a feature the platform
+does not have.
+
+One caveat specific to Bluetooth on Android: a paired headset's *microphone* is
+only used when the OS switches the route into communication mode, and it does
+not always do so for a browser tab. If Jarvis sounds like it is hearing the
+phone's own mic while the headset plays audio, that is the cause, and a wired
+headset avoids it.
+
 ### Background speech
 
 Browser `noiseSuppression` is enabled but will not help with people talking
