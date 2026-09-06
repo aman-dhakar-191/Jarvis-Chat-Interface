@@ -28,7 +28,7 @@ const HOST = 'generativelanguage.googleapis.com';
 const PATH = '/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 class GeminiLiveEngine {
-  constructor(config, callbacks = {}, { mode = 'ptt', instructions = '', refreshInstructions = null } = {}) {
+  constructor(config, callbacks = {}, { mode = 'ptt', instructions = '', refreshInstructions = null, tools = [] } = {}) {
     this.config = config.voice;
     this.callbacks = callbacks;
     this.name = 'gemini';
@@ -38,6 +38,10 @@ class GeminiLiveEngine {
     // replaced roughly every 10 minutes, so this is a free opportunity to pick
     // up anything learned since the session opened.
     this.refreshInstructions = refreshInstructions;
+    // Declared to the model at setup. The gateway holds the implementations -
+    // the browser never sees a tool call, so a compromised client cannot forge
+    // one.
+    this.tools = tools;
     this.inputSampleRate = config.voice.inputSampleRate;
     this.outputSampleRate = config.voice.outputSampleRate;
 
@@ -92,6 +96,9 @@ class GeminiLiveEngine {
     };
     if (this.instructions) {
       setup.systemInstruction = { parts: [{ text: this.instructions }] };
+    }
+    if (this.tools.length) {
+      setup.tools = [{ functionDeclarations: this.tools }];
     }
     return { setup };
   }
@@ -184,11 +191,17 @@ class GeminiLiveEngine {
       return;
     }
     if (message.toolCall) {
-      // Phase 4. Acknowledged here so an unexpected tool call is visible in
-      // logs rather than silently dropped.
-      logger.warn('gemini requested a tool call, but tools are not wired yet', {
-        names: (message.toolCall.functionCalls || []).map((c) => c.name),
-      });
+      for (const call of message.toolCall.functionCalls || []) {
+        this.callbacks.onToolCall?.({
+          id: call.id,
+          name: call.name,
+          args: call.args || {},
+        });
+      }
+      return;
+    }
+    if (message.toolCallCancellation) {
+      this.callbacks.onToolCancelled?.(message.toolCallCancellation.ids || []);
       return;
     }
 
@@ -270,6 +283,30 @@ class GeminiLiveEngine {
     const queued = this.pending;
     this.pending = [];
     for (const chunk of queued) this.send(chunk);
+  }
+
+  /** Answer a tool call. The model speaks the result in its own words. */
+  sendToolResult(id, name, response) {
+    this.send({
+      toolResponse: {
+        functionResponses: [{ id, name, response }],
+      },
+    });
+  }
+
+  /**
+   * Put text into the conversation as if it had been said to the model.
+   * Used to hand it something that arrived out of band - an approval request
+   * raised by a workflow, say - so it can read it out rather than the user
+   * having to find it on screen.
+   */
+  sendText(text) {
+    this.send({
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turnComplete: true,
+      },
+    });
   }
 
   // In `open` mode the model detects turns itself; sending manual activity

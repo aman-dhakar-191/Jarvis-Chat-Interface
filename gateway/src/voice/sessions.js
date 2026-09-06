@@ -53,6 +53,7 @@ class VoiceSessionStore {
       inputSampleRate: null,
       outputSampleRate: null,
       talking: false,
+      pendingApprovalId: null,
       startedAt: Date.now(),
       expiresAt: Date.now() + maxSessionMs,
       inSequence: 0,

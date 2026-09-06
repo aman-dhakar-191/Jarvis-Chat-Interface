@@ -89,6 +89,15 @@ function buildConfig(env = process.env) {
       // Deliberately short: this sits between the button press and the session
       // opening. Starting without memory beats feeling broken.
       memoryTimeoutMs: int(env, 'VOICE_MEMORY_TIMEOUT_MS', 2500),
+      // Standing approval rules ("stop asking me about this"). Stored through
+      // n8n like the snapshot, so the gateway holds no database credentials.
+      // Unset keeps rules in memory only - they vanish on restart, which is
+      // degraded but never blocking.
+      rulesUrl: (env.VOICE_RULES_URL || '').trim(),
+      rulesTimeoutMs: int(env, 'VOICE_RULES_TIMEOUT_MS', 2500),
+      // Spoken approvals: an approval raised while a voice session is live is
+      // read out and answered by voice instead of waiting for a tap.
+      spokenApprovals: (env.VOICE_SPOKEN_APPROVALS || 'true').toLowerCase() !== 'false',
       // The rates differ by direction: Gemini takes 16 kHz and returns 24 kHz.
       // One shared rate would sound like chipmunk audio in one direction.
       inputSampleRate: int(env, 'VOICE_INPUT_SAMPLE_RATE', 16000),
