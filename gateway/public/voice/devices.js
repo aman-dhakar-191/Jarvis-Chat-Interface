@@ -59,32 +59,47 @@ const VoiceDevices = {
       && typeof AudioContext.prototype.setSinkId === 'function';
   },
 
-  async list() {
+  /**
+   * Every audio device the browser will admit to.
+   *
+   * Labels are hidden until microphone permission is granted, and some browsers
+   * return a single unnamed placeholder before then - hence the temporary
+   * permission grab, which is the only way to get a real list without waiting
+   * for a voice session to start.
+   */
+  async list({ prompt = false } = {}) {
     if (!navigator.mediaDevices?.enumerateDevices) return { inputs: [], outputs: [] };
-    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+
+    let devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const unlabelled = devices.some((d) => (d.kind === 'audioinput' || d.kind === 'audiooutput') && !d.label);
+
+    if (prompt && unlabelled && navigator.mediaDevices.getUserMedia) {
+      try {
+        // Opened and closed immediately: it exists only to unlock the labels.
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        for (const track of stream.getTracks()) track.stop();
+        devices = await navigator.mediaDevices.enumerateDevices().catch(() => devices);
+      } catch {
+        /* permission refused - fall through with whatever we have */
+      }
+    }
+
     const pick = (kind, fallbackLabel) => devices
       .filter((d) => d.kind === kind)
+      // Some browsers list a synthetic "default"/"communications" entry that
+      // duplicates a real device; keeping them is harmless and occasionally
+      // the only way to follow the system route.
       .map((d, index) => ({
         deviceId: d.deviceId,
-        // A blank label means permission has not been granted yet.
         label: d.label || `${fallbackLabel} ${index + 1}`,
       }));
-    return {
-      inputs: pick('audioinput', 'Microphone'),
-      outputs: this.outputSelectable() ? pick('audiooutput', 'Speaker') : [],
-    };
-  },
 
-  /**
-   * Whether a picker is worth showing at all.
-   *
-   * On mobile the OS owns audio routing: Android Chrome and iOS Safari expose
-   * no audiooutput devices and a single "Default" input, and setSinkId does not
-   * exist. A dropdown with one entry is not a choice - it is a dead control
-   * implying a feature the platform does not have.
-   */
-  meaningful(devices) {
-    return devices.length > 1;
+    return {
+      // Outputs are listed even where setSinkId is missing, so the user can see
+      // what exists; selecting one then falls back to the system route.
+      inputs: pick('audioinput', 'Microphone'),
+      outputs: pick('audiooutput', 'Speaker'),
+    };
   },
 
   /**
