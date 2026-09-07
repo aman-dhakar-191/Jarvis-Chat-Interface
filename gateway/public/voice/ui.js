@@ -125,29 +125,38 @@
 
   // Device labels stay blank until microphone permission has been granted, so
   // the lists are refreshed after the first session opens as well as on hotplug.
-  async function refreshDevices() {
-    const { inputs, outputs } = await VoiceDevices.list();
+  // Both pickers always list everything the browser reports. `prompt` asks for
+  // microphone permission when labels are still hidden, which is the only way
+  // to get real device names before a session has started.
+  async function refreshDevices({ prompt = false } = {}) {
+    const { inputs, outputs } = await VoiceDevices.list({ prompt });
     VoiceDevices.fill(el.mic, inputs, VoiceDevices.get('input'));
     VoiceDevices.fill(el.speaker, outputs, VoiceDevices.get('output'));
 
-    // Hide pickers that offer no actual choice rather than showing a dropdown
-    // with one entry. On mobile the OS owns routing - there are no output
-    // devices to enumerate and setSinkId does not exist - so a dead control
-    // would imply a feature the platform does not have.
-    const micUseful = VoiceDevices.meaningful(inputs);
-    const outUseful = VoiceDevices.outputSelectable() && VoiceDevices.meaningful(outputs);
-    if (el.mic) el.mic.hidden = !micUseful;
-    if (el.speaker) el.speaker.hidden = !outUseful;
-    if (el.routing) {
-      el.routing.hidden = micUseful && outUseful;
-      el.routing.textContent = outUseful
-        ? 'Microphone chosen by your device.'
-        : 'Audio routing is handled by your device — connect a headset and it switches automatically.';
+    if (!el.routing) return;
+    // Only say something when a choice cannot actually take effect. On mobile
+    // there are no outputs to list and setSinkId does not exist; on desktop
+    // this stays quiet.
+    if (outputs.length === 0) {
+      el.routing.hidden = false;
+      el.routing.textContent = 'Your device chooses the speaker — connect a headset and it switches automatically.';
+    } else if (!VoiceDevices.outputSelectable()) {
+      el.routing.hidden = false;
+      el.routing.textContent = 'This browser cannot switch speakers; audio follows the system default.';
+    } else {
+      el.routing.hidden = true;
     }
   }
 
   refreshDevices();
-  navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshDevices());
+
+  // Re-enumerate as the list is opened: devices get plugged in mid-session, and
+  // devicechange is not fired by every browser.
+  for (const select of [el.mic, el.speaker]) {
+    select?.addEventListener('pointerdown', () => refreshDevices({ prompt: true }));
+    select?.addEventListener('focus', () => refreshDevices({ prompt: true }));
+  }
   /* ---------------- microphone gate ---------------- */
 
   // Browser noise suppression is built to preserve speech, so it treats other
@@ -213,6 +222,9 @@
     setMinimised(false);
     showOverlay(true);
     el.caption.textContent = '';
+    // Populate the pickers with real names before the session starts, so the
+    // user can pick a device rather than discovering the list afterwards.
+    refreshDevices({ prompt: true });
     if (session.state === 'idle') {
       await session.start();
       // Permission has now been asked for, so real device names exist.

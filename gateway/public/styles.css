@@ -776,7 +776,7 @@ body {
   max-width: 34ch;
   text-align: center;
 }
-.vo-selects select[hidden] { display: none; }
+.vo-selects select { min-width: 116px; }
 
 /* Minimised voice mode.
    The session keeps running - this is a change of chrome, not of state - so

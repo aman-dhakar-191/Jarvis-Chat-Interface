@@ -187,18 +187,21 @@ curl -s https://jarvis.srv1918051.hstgr.cloud/health | grep -o '"voiceEnabled":[
 docker exec jarvis-gateway printenv | grep VOICE_
 ```
 
-### Device selection on mobile
+### Device selection
 
-There is no microphone or speaker picker on a phone, and that is not a fault.
-Android Chrome and iOS Safari enumerate **no** `audiooutput` devices and do not
-implement `setSinkId`; input is usually a single "Default". The OS owns routing
-— connect or pair a headset and the phone switches to it, with the browser
-having no say.
+Both pickers list every audio device the browser reports, always. Opening
+either one re-enumerates, because devices get plugged in mid-session and
+`devicechange` is not fired by every browser.
 
-The pickers therefore hide themselves when they would offer only one entry, and
-a line of text says routing is handled by the device. A dropdown containing one
-option is not a choice; it is a dead control implying a feature the platform
-does not have.
+Device **labels** are hidden until microphone permission has been granted —
+before that some browsers return unnamed placeholders. Opening the voice
+overlay or a picker therefore requests permission briefly and releases it
+immediately; that grab exists only to unlock the names.
+
+On a phone the output list is usually empty and `setSinkId` does not exist: the
+OS owns routing, so connect or pair a headset and it switches by itself. A line
+under the pickers says so when a choice cannot take effect — but the controls
+stay visible rather than disappearing.
 
 One caveat specific to Bluetooth on Android: a paired headset's *microphone* is
 only used when the OS switches the route into communication mode, and it does
